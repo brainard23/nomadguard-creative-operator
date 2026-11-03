@@ -54,3 +54,17 @@ export class InterruptedError extends Error {
     super(message);
   }
 }
+
+/**
+ * Thrown (by generation) when shots wait on external input, e.g. clips a human must add to the inbox.
+ * The runner parks the job as AWAITING_CLIPS instead of failing it; `resume` continues.
+ */
+export class AwaitingInputError extends Error {
+  override name = "AwaitingInputError";
+  constructor(
+    readonly sceneIds: string[],
+    message: string,
+  ) {
+    super(message);
+  }
+}

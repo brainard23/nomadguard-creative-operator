@@ -13,17 +13,22 @@ import { createVideoProvider, type ProviderKind } from "./video/index.ts";
 if (existsSync(".env")) process.loadEnvFile(".env");
 
 const USAGE = `Usage:
-  pnpm start run [--plan-only] [--provider mock|veo] [--brief <path>] [--llm fake|vertex] [--skip-creative-qa]
-  pnpm start resume <runId> [--plan-only] [--provider mock|veo] [--llm fake|vertex] [--skip-creative-qa]
+  pnpm start run [--plan-only] [--provider manual|mock|veo] [--brief <path>] [--llm gemini|fake] [--skip-creative-qa]
+  pnpm start resume <runId> [--plan-only] [--provider manual|mock|veo] [--llm gemini|fake] [--skip-creative-qa]
   pnpm start status [runId]
 
 Options:
   --plan-only   Stop after strategy, storyboard and prompts (no video generation)
-  --provider    Video provider: mock (offline) or veo (Veo 3.1 on Vertex AI).
+  --provider    Video provider: manual (free: make clips in Google Flow, drop them in the run's inbox/),
+                mock (offline) or veo (Veo 3.1 on Vertex AI, billed).
                 Default: veo if GOOGLE_CLOUD_PROJECT is set, otherwise mock
   --brief       Path to the brief JSON (default: ${DEFAULT_BRIEF_PATH})
-  --llm         LLM client: vertex (default) or fake (offline fixtures)
-  --skip-creative-qa  Skip the Gemini vision review of sampled frames (technical QA still runs)`;
+  --llm         LLM client: gemini (default; GEMINI_API_KEY from AI Studio, else Vertex AI; "vertex" is an alias)
+                or fake (offline fixtures)
+  --skip-creative-qa  Skip the Gemini vision review of sampled frames (technical QA still runs)
+
+Manual provider: \`run --provider manual\` writes prompts to runs/<id>/inbox/ and pauses (state AWAITING_CLIPS,
+exit code 0). Add the <sceneId>.mp4 files, then \`resume <runId> --provider manual\`.`;
 
 /** Run being executed, so a fatal error or signal can still be recorded on the job. */
 const active: { store?: JobStore; runId?: string } = {};
@@ -47,7 +52,7 @@ async function main(argv: string[]): Promise<number> {
     options: {
       "plan-only": { type: "boolean", default: false },
       brief: { type: "string", default: DEFAULT_BRIEF_PATH },
-      llm: { type: "string", default: "vertex" },
+      llm: { type: "string", default: "gemini" },
       provider: { type: "string" },
       "skip-creative-qa": { type: "boolean", default: false },
     },
@@ -72,11 +77,19 @@ async function main(argv: string[]): Promise<number> {
     console.error(`resume needs a run id.\n\n${USAGE}`);
     return 2;
   }
-  if (values.llm !== "fake" && values.llm !== "vertex") {
-    console.error(`Unknown --llm "${values.llm}" (expected fake or vertex).\n\n${USAGE}`);
+  if (values.llm !== "fake" && values.llm !== "gemini" && values.llm !== "vertex") {
+    console.error(`Unknown --llm "${values.llm}" (expected gemini or fake).\n\n${USAGE}`);
     return 2;
   }
   let providerKind = values.provider;
+  if (providerKind === undefined && command === "resume") {
+    // A run paused for manual clips must not silently resume on another provider.
+    const prior = await store.get(runId!);
+    if (prior.shots.some((sh) => sh.providerJobId?.startsWith("manual:"))) {
+      providerKind = "manual";
+      console.log("Run was started with the manual provider: resuming with --provider manual.");
+    }
+  }
   if (providerKind === undefined) {
     providerKind = process.env.GOOGLE_CLOUD_PROJECT?.trim() ? "veo" : "mock";
     if (!values["plan-only"]) {
@@ -87,8 +100,8 @@ async function main(argv: string[]): Promise<number> {
       );
     }
   }
-  if (providerKind !== "mock" && providerKind !== "veo") {
-    console.error(`Unknown --provider "${providerKind}" (expected mock or veo).\n\n${USAGE}`);
+  if (providerKind !== "mock" && providerKind !== "veo" && providerKind !== "manual") {
+    console.error(`Unknown --provider "${providerKind}" (expected manual, mock or veo).\n\n${USAGE}`);
     return 2;
   }
 
@@ -125,6 +138,15 @@ async function main(argv: string[]): Promise<number> {
   console.log(formatJobStatus(job, store.runDir(job.runId)));
 
   if (controller.signal.aborted) return 130;
+  if (job.state === "AWAITING_CLIPS") {
+    // Not a failure: the run is paused on purpose, so exit 0.
+    const missing = job.shots.filter((sh) => sh.state !== "SUCCEEDED").map((sh) => sh.sceneId);
+    const inbox = `${store.runDir(job.runId)}/inbox`;
+    console.log(`\nWaiting for ${missing.length} clip${missing.length === 1 ? "" : "s"}: ${missing.map((id) => `${id}.mp4`).join(", ")}`);
+    console.log(`Make them in Google Flow using the prompts in ${inbox}/ (see ${inbox}/README.md), save the MP4s there, then:`);
+    console.log(`  pnpm start resume ${job.runId} --provider manual`);
+    return 0;
+  }
   if (job.state === "FAILED") {
     console.error(`\nRun failed during "${job.error?.stage}": ${job.error?.message}`);
     console.error(`Details saved in ${store.runDir(job.runId)}/job.json. Fix the cause, then: pnpm start resume ${job.runId}`);

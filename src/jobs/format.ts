@@ -19,7 +19,9 @@ export function formatJobStatus(job: Job, runDir: string): string {
   lines.push(artifacts.length ? "Artifacts:" : "Artifacts: none");
   for (const [name, rel] of artifacts) lines.push(`  ${name.padEnd(10)} ${runDir}/${rel}`);
   for (const note of job.notes) lines.push(`Note:    ${note}`);
-  if (job.state === "FAILED" || (job.state !== "FINALIZED" && job.state !== "NEEDS_REVIEW" && job.state !== "PLANNED")) {
+  if (job.state === "AWAITING_CLIPS") {
+    lines.push(`Inbox:   ${runDir}/inbox`, `Resume:  pnpm start resume ${job.runId} --provider manual`);
+  } else if (job.state === "FAILED" || (job.state !== "FINALIZED" && job.state !== "NEEDS_REVIEW" && job.state !== "PLANNED")) {
     lines.push(`Resume:  pnpm start resume ${job.runId}`);
   }
   return lines.join("\n");

@@ -3,9 +3,9 @@ import { join, relative } from "node:path";
 import { z } from "zod";
 import type { Shot } from "../jobs/types.ts";
 import { DEFAULT_RETRY_POLICY, retry, type BackoffPolicy } from "../util/retry.ts";
-import { VideoProviderError, type VideoJobError } from "../video/types.ts";
+import { VideoProviderError, type ResultTarget, type VideoJobError } from "../video/types.ts";
 import { readArtifact } from "./artifacts.ts";
-import { InterruptedError, StageError, type PipelineContext, type Stage } from "./types.ts";
+import { AwaitingInputError, InterruptedError, StageError, type PipelineContext, type Stage } from "./types.ts";
 
 const PromptsFileSchema = z.object({
   shots: z.array(
@@ -98,7 +98,13 @@ export const generationStage: Stage = {
     const rejections = results.filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => r.reason);
     const interrupted = rejections.find((e) => e instanceof InterruptedError);
     if (interrupted) throw interrupted;
-    if (rejections[0]) throw rejections[0];
+    // Real failures win over waiting: the run is not resumable-as-is until they are fixed.
+    const failure = rejections.find((e) => !(e instanceof AwaitingInputError));
+    if (failure) throw failure;
+    const waiting = rejections.filter((e): e is AwaitingInputError => e instanceof AwaitingInputError);
+    if (waiting.length) {
+      throw new AwaitingInputError(waiting.flatMap((w) => w.sceneIds), waiting.map((w) => w.message).join("; "));
+    }
   },
 };
 
@@ -140,11 +146,11 @@ async function runShot(ctx: PipelineContext, shot: PromptShot, prior: Shot | und
         ).providerJobId;
         await store.updateShot(runId, id, { state: "SUBMITTED", providerJobId });
       }
-      await pollUntilDone(ctx, id, providerJobId, policy);
+      await pollUntilDone(ctx, id, providerJobId, policy, { sceneId: id, outputDir: clipsDir });
       const { clipPath } = await provider.getResult(providerJobId, { sceneId: id, outputDir: clipsDir });
       await store.updateShot(runId, id, { state: "SUCCEEDED", clipPath: relative(store.runDir(runId), clipPath) });
     } catch (err) {
-      if (err instanceof InterruptedError) throw err;
+      if (err instanceof InterruptedError || err instanceof AwaitingInputError) throw err;
       throw toAttemptError(err);
     }
   };
@@ -159,7 +165,7 @@ async function runShot(ctx: PipelineContext, shot: PromptShot, prior: Shot | und
       },
     });
   } catch (err) {
-    if (err instanceof InterruptedError) throw err;
+    if (err instanceof InterruptedError || err instanceof AwaitingInputError) throw err;
     const e = toAttemptError(err);
     const error = { message: e.message, retryable: e.retryable, code: e.code };
     const final = await store.updateShot(runId, id, { state: "FAILED", error });
@@ -174,15 +180,24 @@ async function runShot(ctx: PipelineContext, shot: PromptShot, prior: Shot | und
 }
 
 /** Polls one provider job to completion. Transient getStatus errors are retried in place (no resubmit). */
-async function pollUntilDone(ctx: PipelineContext, sceneId: string, providerJobId: string, policy: BackoffPolicy): Promise<void> {
+async function pollUntilDone(
+  ctx: PipelineContext,
+  sceneId: string,
+  providerJobId: string,
+  policy: BackoffPolicy,
+  target: ResultTarget,
+): Promise<void> {
   const provider = ctx.provider!;
   const deadline = Date.now() + ctx.pollTimeoutMs;
   const wait = abortableSleep(ctx.signal);
   let marked = false;
   for (;;) {
     if (ctx.signal?.aborted) throw new InterruptedError();
-    const status = await retry(() => provider.getStatus(providerJobId), { ...policy, isRetryable: isTransient });
+    const status = await retry(() => provider.getStatus(providerJobId, target), { ...policy, isRetryable: isTransient });
     if (status.state === "succeeded") return;
+    if (status.state === "awaiting_input") {
+      throw new AwaitingInputError([sceneId], status.message ?? `waiting for the clip for ${sceneId}`);
+    }
     if (status.state === "failed") {
       throw fromProvider(status.error ?? { message: "Provider reported failure without a reason", retryable: false });
     }

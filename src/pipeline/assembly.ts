@@ -18,16 +18,17 @@ export const assemblyStage: Stage = {
       if (shot?.state !== "SUCCEEDED" || !shot.clipPath) {
         throw new StageError("assembly", `Shot ${scene.id} has no finished clip.`, { sceneId: scene.id });
       }
-      return join(runDir, shot.clipPath);
+      return { path: join(runDir, shot.clipPath), seconds: scene.duration };
     });
 
     try {
-      await assemble({
+      const { notes } = await assemble({
         clips,
         endCard: { ...storyboard.end_card, brand: brief.brand },
         workDir: runDir,
         output: store.artifactPath(runId, "final"),
       });
+      if (notes.length) await store.update(runId, { notes: [...(await store.get(runId)).notes, ...notes] });
     } catch (err) {
       throw new StageError("assembly", err instanceof Error ? err.message : String(err), undefined, { cause: err });
     }

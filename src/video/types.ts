@@ -8,7 +8,8 @@ export interface GenerateRequest {
   outputDir: string;
 }
 
-export type VideoJobState = "pending" | "running" | "succeeded" | "failed";
+/** "awaiting_input": nothing will happen until a human supplies the clip (manual provider); the run pauses instead of polling. */
+export type VideoJobState = "pending" | "running" | "succeeded" | "failed" | "awaiting_input";
 
 export interface VideoJobError {
   message: string;
@@ -20,12 +21,15 @@ export interface VideoJobError {
 export interface VideoJobStatus {
   state: VideoJobState;
   error?: VideoJobError;
+  /** Human-readable detail, e.g. which file the provider is waiting for. */
+  message?: string;
 }
 
 /** Async video generation boundary. The workflow depends only on this interface. */
 export interface VideoProvider {
   generate(req: GenerateRequest): Promise<{ providerJobId: string }>;
-  getStatus(providerJobId: string): Promise<VideoJobStatus>;
+  /** `target` tells stateless providers where the run's files live (manual provider); others ignore it. */
+  getStatus(providerJobId: string, target?: ResultTarget): Promise<VideoJobStatus>;
   /**
    * Only valid once status is "succeeded". Stateless: the caller says where the clip belongs,
    * so it works after a restart without any provider memory.

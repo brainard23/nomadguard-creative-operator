@@ -5,6 +5,8 @@ export const JobStateSchema = z.enum([
   "PLANNING",
   "PLANNED",
   "GENERATING",
+  /** Paused until clips are dropped into runs/<id>/inbox (manual provider); resumable. */
+  "AWAITING_CLIPS",
   "ASSEMBLING",
   "EVALUATING",
   "FINALIZED",

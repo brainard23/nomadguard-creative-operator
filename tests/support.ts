@@ -35,10 +35,18 @@ export const total = (s: Storyboard) =>
 
 import { ffmpeg } from "../src/media/exec.ts";
 
-/** Real ffmpeg-made test clip with an audio track. */
-export async function makeClip(path: string, opts: { width: number; height: number; seconds: number }): Promise<void> {
+/** Real ffmpeg-made test clip; `audio: false` produces a video-only file (like some Flow downloads). */
+export async function makeClip(
+  path: string,
+  opts: { width: number; height: number; seconds: number; audio?: boolean },
+): Promise<void> {
+  const video = ["-f", "lavfi", "-i", `testsrc2=size=${opts.width}x${opts.height}:rate=15:duration=${opts.seconds}`];
+  if (opts.audio === false) {
+    await ffmpeg([...video, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-an", path]);
+    return;
+  }
   await ffmpeg([
-    "-f", "lavfi", "-i", `testsrc2=size=${opts.width}x${opts.height}:rate=15:duration=${opts.seconds}`,
+    ...video,
     "-f", "lavfi", "-i", `sine=frequency=440:duration=${opts.seconds}`,
     "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path,
   ]);
@@ -64,10 +72,10 @@ export class RecordingProvider implements VideoProvider {
     return res;
   }
 
-  async getStatus(id: string): Promise<VideoJobStatus> {
+  async getStatus(id: string, target?: ResultTarget): Promise<VideoJobStatus> {
     this.polled.push(id);
     await this.beforeStatus?.(id, this.sceneOf.get(id) ?? "?");
-    return this.inner.getStatus(id);
+    return this.inner.getStatus(id, target);
   }
 
   getResult(id: string, target: ResultTarget) {

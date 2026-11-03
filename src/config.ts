@@ -3,25 +3,46 @@ export class ConfigError extends Error {
 }
 
 export interface VertexConfig {
+  mode: "vertex";
   project: string;
   location: string;
-  geminiModel: string;
+  model: string;
 }
 
-export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+export interface ApiKeyConfig {
+  mode: "apiKey";
+  apiKey: string;
+  model: string;
+}
 
-export function loadVertexConfig(env: NodeJS.ProcessEnv = process.env): VertexConfig {
+export type GeminiConfig = VertexConfig | ApiKeyConfig;
+
+/** Vertex default; AI Studio keys use a newer default because gemini-2.5-flash is closed to new key users. */
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+export const DEFAULT_API_KEY_GEMINI_MODEL = "gemini-3.8-flash";
+
+/**
+ * GEMINI_API_KEY (Google AI Studio, free tier) wins; otherwise Vertex AI with ADC.
+ * GEMINI_MODEL overrides the default of either mode.
+ */
+export function loadGeminiConfig(env: NodeJS.ProcessEnv = process.env): GeminiConfig {
+  const model = env.GEMINI_MODEL?.trim();
+  const apiKey = env.GEMINI_API_KEY?.trim();
+  if (apiKey) return { mode: "apiKey", apiKey, model: model || DEFAULT_API_KEY_GEMINI_MODEL };
   const project = env.GOOGLE_CLOUD_PROJECT?.trim();
   const location = env.GOOGLE_CLOUD_LOCATION?.trim();
-  const missing = [!project && "GOOGLE_CLOUD_PROJECT", !location && "GOOGLE_CLOUD_LOCATION"].filter(
-    Boolean,
-  );
-  if (!project || !location) {
+  if (!project && !location) {
     throw new ConfigError(
-      `Missing environment variable(s): ${missing.join(", ")}. Copy .env.example to .env and set them (and run \`gcloud auth application-default login\`), or use --llm fake.`,
+      "No Gemini credentials configured. Either set GEMINI_API_KEY (free Google AI Studio key, https://aistudio.google.com/apikey) or set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION for Vertex AI (plus `gcloud auth application-default login`). Copy .env.example to .env, or use --llm fake.",
     );
   }
-  return { project, location, geminiModel: env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL };
+  const missing = [!project && "GOOGLE_CLOUD_PROJECT", !location && "GOOGLE_CLOUD_LOCATION"].filter(Boolean);
+  if (!project || !location) {
+    throw new ConfigError(
+      `Missing environment variable(s): ${missing.join(", ")}. Set them for Vertex AI (and run \`gcloud auth application-default login\`), or set GEMINI_API_KEY to use an AI Studio key, or use --llm fake.`,
+    );
+  }
+  return { mode: "vertex", project, location, model: model || DEFAULT_GEMINI_MODEL };
 }
 
 export interface VeoConfig {

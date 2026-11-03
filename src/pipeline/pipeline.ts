@@ -11,7 +11,7 @@ import { assemblyStage } from "./assembly.ts";
 import { evaluationStage } from "./evaluation.ts";
 import { generationStage } from "./generation.ts";
 import { planningStage } from "./planning.ts";
-import { InterruptedError, StageError, type PipelineContext, type Stage } from "./types.ts";
+import { AwaitingInputError, InterruptedError, StageError, type PipelineContext, type Stage } from "./types.ts";
 
 export interface PipelineOptions {
   store: JobStore;
@@ -122,6 +122,13 @@ export async function runStages(ctx: PipelineContext, stages: Stage[]): Promise<
       const job = await store.get(runId).catch(() => undefined);
       const note = `interrupted during "${current}"; run "resume ${runId}" to continue`;
       return job ? store.update(runId, { notes: [...job.notes, note] }) : Promise.reject(err);
+    }
+    if (err instanceof AwaitingInputError) {
+      const job = await store.get(runId);
+      return store.update(runId, {
+        state: "AWAITING_CLIPS",
+        notes: [...job.notes, `awaiting clips for ${err.sceneIds.join(", ")}: ${err.message}`],
+      });
     }
     const stageErr = err instanceof StageError ? err : undefined;
     return store.update(runId, {
