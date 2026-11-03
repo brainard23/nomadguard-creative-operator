@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { ffmpeg } from "../media/exec.ts";
 import { probeClip } from "../media/probe.ts";
 import type { Scene } from "../creative/schemas.ts";
-import { renderEndCardPng, renderNotificationPng, type EndCardText } from "../media/textImage.ts";
+import { NOTIFICATION_MARGIN, notificationTop, renderEndCardPng, renderNotificationPng, type EndCardText, type OverlayPosition } from "../media/textImage.ts";
 
 export const OUTPUT = { width: 1080, height: 1920, fps: 30, maxSeconds: 15 } as const;
 
@@ -16,7 +16,7 @@ export interface ClipSpec {
   /** Skip this many seconds at the start of the clip before `seconds` is measured. */
   trimStart?: number;
   /** Transparent full-frame PNG shown from `at` for `duration` seconds (relative to the trimmed clip). */
-  overlay?: { image: string; at: number; duration: number };
+  overlay?: { image: string; at: number; duration: number; x?: number; y?: number };
 }
 
 /** Seconds the overlay takes to fade in and out. */
@@ -67,7 +67,7 @@ export function buildAssembleArgs(spec: AssembleSpec): string[] {
       // Fade the PNG's alpha so the card eases in/out; `enable` keeps it strictly inside its window.
       parts.push(`[${oi}:v]format=rgba,fade=t=in:st=${ov.at}:d=${OVERLAY_FADE}:alpha=1,fade=t=out:st=${Math.max(ov.at, end - OVERLAY_FADE)}:d=${OVERLAY_FADE}:alpha=1[o${i}]`);
       parts.push(`[${i}:v]${trim}${norm}[b${i}]`);
-      parts.push(`[b${i}][o${i}]overlay=0:0:format=auto:enable='between(t,${ov.at},${end})',format=yuv420p[v${i}]`);
+      parts.push(`[b${i}][o${i}]overlay=${ov.x ?? 0}:${ov.y ?? 0}:format=auto:enable='between(t,${ov.at},${end})',format=yuv420p[v${i}]`);
     } else {
       parts.push(`[${i}:v]${trim}${norm}[v${i}]`);
     }
@@ -102,7 +102,7 @@ export function buildAssembleArgs(spec: AssembleSpec): string[] {
 
 export interface AssembleInput {
   /** Clip paths in storyboard order; `seconds` is the planned shot duration. */
-  clips: { path: string; seconds: number; trimStart?: number; overlay?: Pick<NonNullable<Scene["overlay"]>, "title" | "body"> & { at: number; duration?: number } }[];
+  clips: { path: string; seconds: number; trimStart?: number; overlay?: Pick<NonNullable<Scene["overlay"]>, "title" | "body"> & { at: number; duration?: number; position?: OverlayPosition } }[];
   endCard: EndCardText & { duration: number };
   workDir: string;
   output: string;
@@ -131,8 +131,9 @@ export async function assemble({ clips, endCard, workDir, output }: AssembleInpu
       const at = Math.min(Math.max(0, clip.overlay.at), Math.max(0, seconds - 0.1));
       const duration = Math.min(clip.overlay.duration ?? seconds - at, seconds - at);
       const image = join(workDir, `overlay_${i + 1}.png`);
-      await renderNotificationPng(image, clip.overlay);
-      spec.overlay = { image, at, duration };
+      const { cardHeight } = await renderNotificationPng(image, clip.overlay);
+      const y = notificationTop(clip.overlay.position ?? "bottom", cardHeight) - NOTIFICATION_MARGIN;
+      spec.overlay = { image, at, duration, x: 0, y };
     }
     specs.push(spec);
   }

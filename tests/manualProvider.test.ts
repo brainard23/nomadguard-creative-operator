@@ -244,6 +244,16 @@ describe("resume --redo / --reassemble", () => {
     expect((await stat(join(store.runDir(runId), "overlay_2.png"))).size).toBeGreaterThan(0);
   });
 
+  it("--reassemble also works when a killed run was left at ASSEMBLING or EVALUATING", async () => {
+    const runId = await finalize();
+    for (const state of ["ASSEMBLING", "EVALUATING"] as const) {
+      await store.update(runId, { state });
+      const done = await run(runId, { reassemble: true });
+      expect(done.state).toBe("FINALIZED");
+      expect(done.notes.at(-1)).not.toMatch(/awaiting/);
+    }
+  });
+
   it("a finished run without --redo/--reassemble is still left untouched", async () => {
     const runId = await finalize();
     const before = await store.get(runId);

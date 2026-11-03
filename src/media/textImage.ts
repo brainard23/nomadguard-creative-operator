@@ -84,13 +84,29 @@ export interface NotificationText {
 
 const APP_LABEL = "NOMADGUARD";
 
+export type OverlayPosition = "top" | "center" | "bottom";
+
+/** Transparent room around the card inside its PNG, for the drop shadow. */
+export const NOTIFICATION_MARGIN = 60;
+
 /**
- * Transparent 1080x1920 canvas with an iOS-style notification card in the upper third:
- * dark translucent rounded card, green check icon, app label, bold title, lighter body.
- * Returns the card's pixel box (for tests / placement).
+ * Pure: y (in the 1920px frame) of the card's top edge. Bottom sits at ~66% of the height, which
+ * keeps the lowest ~15% clear for TikTok/IG captions; top is the upper-third placement.
  */
-export async function renderNotificationPng(outPath: string, text: NotificationText): Promise<{ x: number; y: number; width: number; height: number }> {
-  const card = { x: 60, y: 210, width: W - 120 };
+export function notificationTop(position: OverlayPosition, cardHeight: number): number {
+  if (position === "top") return 210;
+  if (position === "center") return Math.round((H - cardHeight) / 2);
+  return Math.round(H * 0.66);
+}
+
+/**
+ * Transparent PNG, 1080 wide and just tall enough for an iOS-style notification card plus its
+ * shadow: dark translucent rounded card, green check icon, app label, bold title, lighter body.
+ * The card's top-left sits at (60, NOTIFICATION_MARGIN); the caller positions the PNG in the frame.
+ * Returns the card height and PNG size.
+ */
+export async function renderNotificationPng(outPath: string, text: NotificationText): Promise<{ cardHeight: number; width: number; height: number }> {
+  const card = { x: 60, y: NOTIFICATION_MARGIN, width: W - 120 };
   const pad = 36;
   const icon = 96;
   const textX = card.x + pad + icon + 28;
@@ -110,7 +126,7 @@ export async function renderNotificationPng(outPath: string, text: NotificationT
 
   const cx = card.x + pad + icon / 2;
   const cy = card.y + pad + icon / 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${height + 2 * NOTIFICATION_MARGIN}">
 <defs><filter id="sh" x="-10%" y="-20%" width="120%" height="160%"><feGaussianBlur stdDeviation="22"/></filter></defs>
 <rect x="${card.x}" y="${card.y + 18}" width="${card.width}" height="${height}" rx="52" fill="#000000" fill-opacity="0.45" filter="url(#sh)"/>
 <rect x="${card.x}" y="${card.y}" width="${card.width}" height="${height}" rx="52" fill="#1C1C1E" fill-opacity="0.88"/>
@@ -123,5 +139,5 @@ ${lines(title, titleY, 42, 700, "#FFFFFF", 1.2)}
 ${lines(body, bodyY, 34, 400, "#D1D1D6", 1.25)}
 </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outPath);
-  return { ...card, height };
+  return { cardHeight: height, width: W, height: height + 2 * NOTIFICATION_MARGIN };
 }

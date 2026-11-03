@@ -7,29 +7,29 @@ import { assemble, buildAssembleArgs } from "../src/assembly/assembler.ts";
 import { normalizeStoryboard } from "../src/creative/normalizeStoryboard.ts";
 import { StoryboardSchema } from "../src/creative/schemas.ts";
 import { ffmpeg } from "../src/media/exec.ts";
-import { renderNotificationPng } from "../src/media/textImage.ts";
+import { notificationTop, renderNotificationPng } from "../src/media/textImage.ts";
 import { probeClip } from "../src/media/probe.ts";
 import { makeClip, storyboard } from "./support.ts";
 
 const graphOf = (args: string[]) => args[args.indexOf("-filter_complex") + 1]!;
 
 describe("scene overlay + trimStart schema", () => {
-  it("accepts storyboards without them and defaults overlay.at to 0.5", () => {
+  it("accepts storyboards without them and defaults overlay.at to 0.5 and position to bottom", () => {
     expect(StoryboardSchema.safeParse(storyboard([4, 4, 4])).success).toBe(true);
     const sb = storyboard([4, 4, 4]);
     (sb.scenes[1] as Record<string, unknown>).overlay = { title: "Protected", body: "You are connected" };
-    expect(StoryboardSchema.parse(sb).scenes[1]!.overlay).toEqual({ title: "Protected", body: "You are connected", at: 0.5 });
+    expect(StoryboardSchema.parse(sb).scenes[1]!.overlay).toEqual({ title: "Protected", body: "You are connected", position: "bottom", at: 0.5 });
   });
 });
 
 describe("normalizeStoryboard overlay / trimStart", () => {
   it("clamps the overlay window inside the scene and trimStart to >= 0", () => {
     const sb = storyboard([4, 4, 4]);
-    sb.scenes[1]!.overlay = { title: "t", body: "b", at: 9, duration: 30 };
-    sb.scenes[2]!.overlay = { title: "t", body: "b", at: 1, duration: 10 };
+    sb.scenes[1]!.overlay = { title: "t", body: "b", position: "bottom", at: 9, duration: 30 };
+    sb.scenes[2]!.overlay = { title: "t", body: "b", position: "bottom", at: 1, duration: 10 };
     sb.scenes[2]!.trimStart = -2;
     const { storyboard: out, adjustments } = normalizeStoryboard(sb);
-    expect(out.scenes[1]!.overlay).toEqual({ title: "t", body: "b", at: 3.5, duration: 0.5 });
+    expect(out.scenes[1]!.overlay).toEqual({ title: "t", body: "b", position: "bottom", at: 3.5, duration: 0.5 });
     expect(out.scenes[2]!.overlay!.duration).toBe(3);
     expect(out.scenes[2]!.trimStart).toBe(0);
     expect(adjustments.join("\n")).toMatch(/overlay at 9s -> 3.5s/);
@@ -37,17 +37,37 @@ describe("normalizeStoryboard overlay / trimStart", () => {
   });
   it("leaves a valid overlay and positive trimStart untouched, and does not mutate input", () => {
     const sb = storyboard([4, 4, 4]);
-    sb.scenes[1]!.overlay = { title: "t", body: "b", at: 0.5, duration: 3 };
+    sb.scenes[1]!.overlay = { title: "t", body: "b", position: "center", at: 0.5, duration: 3 };
     sb.scenes[1]!.trimStart = 1.5;
     const copy = structuredClone(sb);
     const { storyboard: out, adjustments } = normalizeStoryboard(sb);
     expect(out).toEqual(copy);
     expect(adjustments).toEqual([]);
   });
+  it("defaults a missing overlay position to bottom and keeps an explicit one", () => {
+    const sb = storyboard([4, 4, 4]);
+    sb.scenes[0]!.overlay = { title: "t", body: "b", at: 0.5 } as never;
+    sb.scenes[1]!.overlay = { title: "t", body: "b", position: "top", at: 0.5 };
+    const out = normalizeStoryboard(sb).storyboard;
+    expect(out.scenes[0]!.overlay!.position).toBe("bottom");
+    expect(out.scenes[1]!.overlay!.position).toBe("top");
+  });
   it("re-clamps against the snapped scene duration", () => {
     const sb = storyboard([5, 4, 4]); // 5 -> 4
-    sb.scenes[0]!.overlay = { title: "t", body: "b", at: 0.5, duration: 4.5 };
+    sb.scenes[0]!.overlay = { title: "t", body: "b", position: "bottom", at: 0.5, duration: 4.5 };
     expect(normalizeStoryboard(sb).storyboard.scenes[0]!.overlay!.duration).toBe(3.5);
+  });
+});
+
+describe("buildAssembleArgs overlay position", () => {
+  it("overlays at the given x:y", () => {
+    const args = buildAssembleArgs({
+      clips: [{ path: "a.mp4", seconds: 4, overlay: { image: "o.png", at: 0.5, duration: 3, x: 0, y: 1207 } }],
+      endCardImage: "end.png",
+      endCardSeconds: 2,
+      output: "f.mp4",
+    });
+    expect(graphOf(args)).toContain("overlay=0:1207:format=auto");
   });
 });
 
@@ -82,6 +102,15 @@ describe("buildAssembleArgs overlay + trimStart", () => {
   });
 });
 
+describe("notificationTop", () => {
+  it("places the card per position: top upper third, center centered, bottom at 66% with the last 15% clear", () => {
+    expect(notificationTop("top", 230)).toBe(210);
+    expect(notificationTop("center", 230)).toBe(845);
+    expect(notificationTop("bottom", 230)).toBe(1267);
+    expect(1267 + 230).toBeLessThan(1920 * 0.85);
+  });
+});
+
 describe("renderNotificationPng", () => {
   let dir: string;
   beforeAll(async () => {
@@ -91,16 +120,16 @@ describe("renderNotificationPng", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("renders a transparent 1080x1920 canvas with an opaque card in the upper third", async () => {
+  it("renders a card-sized transparent PNG with an opaque card inside the shadow margin", async () => {
     const out = join(dir, "n.png");
-    const box = await renderNotificationPng(out, { title: "Connection secured", body: "Your data is protected on public Wi-Fi" });
+    const r = await renderNotificationPng(out, { title: "Connection secured", body: "Your data is protected on public Wi-Fi" });
     const { data, info } = await sharp(out).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    expect([info.width, info.height]).toEqual([1080, 1920]);
+    expect([info.width, info.height]).toEqual([r.width, r.height]);
+    expect(r.width).toBe(1080);
+    expect(r.height).toBe(r.cardHeight + 120);
     const alphaAt = (x: number, y: number) => data[(y * info.width + x) * 4 + 3]!;
     expect(alphaAt(5, 5)).toBe(0);
-    expect(alphaAt(540, 1800)).toBe(0);
-    expect(alphaAt(box.x + 20, box.y + box.height / 2)).toBeGreaterThan(200);
-    expect(box.y + box.height).toBeLessThan(1920 / 3 + 100);
+    expect(alphaAt(120, 60 + r.cardHeight / 2)).toBeGreaterThan(200);
   });
 
   it("real ffmpeg render: overlay appears inside its window and not before it", async () => {
@@ -122,9 +151,9 @@ describe("renderNotificationPng", () => {
     const before = await frame(0.5, "before.jpg");
     const during = await frame(2, "during.jpg");
     const after = await frame(3.6, "after.jpg");
-    // The card's green check icon (#34C759) sits at a known spot over the colour-bar test pattern.
+    // The card's green check icon (#34C759) sits at a known spot (bottom placement) over the colour-bar test pattern.
     const iconPixel = async (p: string) => {
-      const { data } = await sharp(p).extract({ left: 118, top: 330, width: 1, height: 1 }).raw().toBuffer({ resolveWithObject: true });
+      const { data } = await sharp(p).extract({ left: 118, top: 1387, width: 1, height: 1 }).raw().toBuffer({ resolveWithObject: true });
       return { r: data[0]!, g: data[1]!, b: data[2]! };
     };
     const isGreen = ({ r, g, b }: { r: number; g: number; b: number }) => Math.abs(r - 52) < 25 && Math.abs(g - 199) < 25 && Math.abs(b - 89) < 25;

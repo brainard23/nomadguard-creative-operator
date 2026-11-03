@@ -75,7 +75,7 @@ function clampScene(scene: Scene, adjustments: string[]): void {
     scene.trimStart = 0;
   }
   if (!scene.overlay) return;
-  const o = { ...scene.overlay };
+  const o = { ...scene.overlay, position: scene.overlay.position ?? "bottom" };
   const latestStart = Math.max(0, scene.duration - MIN_OVERLAY_SECONDS);
   const at = Math.min(Math.max(0, Number.isFinite(o.at) ? o.at : 0), latestStart);
   if (at !== o.at) adjustments.push(`scene ${scene.id}: overlay at ${o.at}s -> ${at}s (kept inside the scene)`);

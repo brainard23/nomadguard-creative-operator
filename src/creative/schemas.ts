@@ -51,6 +51,8 @@ export const ScenePurposeSchema = z.enum(["hook", "problem", "turn", "resolution
 export const OverlaySchema = z.object({
   title: z.string().min(1),
   body: z.string().min(1),
+  /** Where the card sits: bottom (default) keeps faces and the caption zone clear. */
+  position: z.enum(["top", "center", "bottom"]).default("bottom"),
   at: z.number().default(0.5),
   duration: z.number().positive().optional(),
 });
