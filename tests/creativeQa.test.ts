@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { decideCreativeQa, loadCreativeQaThresholds, creativeQaSchema } from "../src/qa/creative.ts";
+import { creativeQaPrompt, decideCreativeQa, loadCreativeQaThresholds, creativeQaSchema } from "../src/qa/creative.ts";
 import { ConfigError } from "../src/config.ts";
+import { storyboard } from "./support.ts";
 
 const scores = (over: Record<string, number> = {}) => {
   const base = { realism: 8, visual_consistency: 8, brief_adherence: 8, hook_strength: 8, advertising_quality: 8, ...over };
@@ -53,5 +54,24 @@ describe("creativeQaSchema", () => {
   it("rejects non-integer or out-of-range scores", () => {
     expect(creativeQaSchema(["s2"]).safeParse({ ...good, scores: scores({ realism: 11 }) }).success).toBe(false);
     expect(creativeQaSchema(["s2"]).safeParse({ ...good, scores: scores({ realism: 7.5 }) }).success).toBe(false);
+  });
+});
+
+describe("creativeQaPrompt", () => {
+  it("tells the model the last frame is the end card and overlays are intentional", () => {
+    const sb = storyboard([4, 4, 4]);
+    const strategy = { angles: [{ name: "A", target_emotion: "e", hook: "h", concept: "c", cta: "x" }], selection: { selected_angle: "A", why_selected: "w", audience_insight: "i", why_it_performs: "p" } };
+    const prompt = creativeQaPrompt({
+      brief: {} as never,
+      strategy: strategy as never,
+      storyboard: sb,
+      frames: [
+        { t: 1, scene_id: "s1", path: "a.jpg" },
+        { t: 13, scene_id: "end_card", path: "b.jpg" },
+      ],
+    });
+    expect(prompt).toMatch(/2\. t=13\.00s, the end card \(brand \+ CTA\)/);
+    expect(prompt).toMatch(/last frame is the end card/);
+    expect(prompt).toMatch(/notification card .* intentional graphic overlay/);
   });
 });

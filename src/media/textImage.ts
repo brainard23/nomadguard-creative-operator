@@ -76,3 +76,52 @@ export async function renderLabelPng(outPath: string, label: string): Promise<vo
 <text x="90" y="205" font-family="${FONT_STACK}" font-weight="700" font-size="80" fill="#FFFFFF">${esc(label)}</text></svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outPath);
 }
+
+export interface NotificationText {
+  title: string;
+  body: string;
+}
+
+const APP_LABEL = "NOMADGUARD";
+
+/**
+ * Transparent 1080x1920 canvas with an iOS-style notification card in the upper third:
+ * dark translucent rounded card, green check icon, app label, bold title, lighter body.
+ * Returns the card's pixel box (for tests / placement).
+ */
+export async function renderNotificationPng(outPath: string, text: NotificationText): Promise<{ x: number; y: number; width: number; height: number }> {
+  const card = { x: 60, y: 210, width: W - 120 };
+  const pad = 36;
+  const icon = 96;
+  const textX = card.x + pad + icon + 28;
+  const textW = card.x + card.width - pad - textX;
+
+  const title = wrapText(text.title, 42, textW).slice(0, 2);
+  const body = wrapText(text.body, 34, textW).slice(0, 3);
+  const labelY = card.y + pad + 22;
+  const titleY = labelY + 20 + 42;
+  const bodyY = titleY + (title.length - 1) * 42 * 1.2 + 14 + 34;
+  const height = Math.round(bodyY + (body.length - 1) * 34 * 1.25 + pad + 6 - card.y);
+
+  const lines = (ls: string[], y: number, size: number, weight: number, fill: string, spacing: number) =>
+    `<text font-family="${FONT_STACK}" font-weight="${weight}" font-size="${size}" fill="${fill}">${ls
+      .map((l, i) => `<tspan x="${textX}" y="${y + i * size * spacing}">${esc(l)}</tspan>`)
+      .join("")}</text>`;
+
+  const cx = card.x + pad + icon / 2;
+  const cy = card.y + pad + icon / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+<defs><filter id="sh" x="-10%" y="-20%" width="120%" height="160%"><feGaussianBlur stdDeviation="22"/></filter></defs>
+<rect x="${card.x}" y="${card.y + 18}" width="${card.width}" height="${height}" rx="52" fill="#000000" fill-opacity="0.45" filter="url(#sh)"/>
+<rect x="${card.x}" y="${card.y}" width="${card.width}" height="${height}" rx="52" fill="#1C1C1E" fill-opacity="0.88"/>
+<rect x="${card.x + 1}" y="${card.y + 1}" width="${card.width - 2}" height="${height - 2}" rx="51" fill="none" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="2"/>
+<circle cx="${cx}" cy="${cy}" r="${icon / 2}" fill="#34C759"/>
+<path d="M${cx - 22} ${cy + 2} L${cx - 6} ${cy + 18} L${cx + 24} ${cy - 16}" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="${textX}" y="${labelY}" font-family="${FONT_STACK}" font-weight="600" font-size="24" letter-spacing="2" fill="#98989F">${APP_LABEL}</text>
+<text x="${card.x + card.width - pad}" y="${labelY}" text-anchor="end" font-family="${FONT_STACK}" font-weight="400" font-size="24" fill="#98989F">now</text>
+${lines(title, titleY, 42, 700, "#FFFFFF", 1.2)}
+${lines(body, bodyY, 34, 400, "#D1D1D6", 1.25)}
+</svg>`;
+  await sharp(Buffer.from(svg)).png().toFile(outPath);
+  return { ...card, height };
+}

@@ -15,6 +15,7 @@ if (existsSync(".env")) process.loadEnvFile(".env");
 const USAGE = `Usage:
   pnpm start run [--plan-only] [--provider manual|mock|veo] [--brief <path>] [--llm gemini|fake] [--skip-creative-qa]
   pnpm start resume <runId> [--plan-only] [--provider manual|mock|veo] [--llm gemini|fake] [--skip-creative-qa]
+  pnpm start resume <runId> (--redo <sceneId>[,<sceneId>] | --reassemble) [--provider ...]
   pnpm start status [runId]
 
 Options:
@@ -25,6 +26,9 @@ Options:
   --brief       Path to the brief JSON (default: ${DEFAULT_BRIEF_PATH})
   --llm         LLM client: gemini (default; GEMINI_API_KEY from AI Studio, else Vertex AI; "vertex" is an alias)
                 or fake (offline fixtures)
+  --redo        With resume: redo these shots (comma-separated scene ids), then reassemble and rerun QA.
+                For the manual provider the shot is re-imported from inbox/<sceneId>.mp4
+  --reassemble  With resume: keep all shots, rerun only assembly + QA (after editing storyboard.json overlay/trimStart)
   --skip-creative-qa  Skip the Gemini vision review of sampled frames (technical QA still runs)
 
 Manual provider: \`run --provider manual\` writes prompts to runs/<id>/inbox/ and pauses (state AWAITING_CLIPS,
@@ -55,6 +59,8 @@ async function main(argv: string[]): Promise<number> {
       llm: { type: "string", default: "gemini" },
       provider: { type: "string" },
       "skip-creative-qa": { type: "boolean", default: false },
+      redo: { type: "string" },
+      reassemble: { type: "boolean", default: false },
     },
   });
   const [command, runId] = positionals;
@@ -77,6 +83,15 @@ async function main(argv: string[]): Promise<number> {
     console.error(`resume needs a run id.\n\n${USAGE}`);
     return 2;
   }
+  const redo = (values.redo ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  if ((redo.length > 0 || values.reassemble) && command !== "resume") {
+    console.error(`--redo and --reassemble only work with resume.\n\n${USAGE}`);
+    return 2;
+  }
+  if (values.redo !== undefined && redo.length === 0) {
+    console.error(`--redo needs at least one scene id, e.g. --redo s2.\n\n${USAGE}`);
+    return 2;
+  }
   if (values.llm !== "fake" && values.llm !== "gemini" && values.llm !== "vertex") {
     console.error(`Unknown --llm "${values.llm}" (expected gemini or fake).\n\n${USAGE}`);
     return 2;
@@ -85,7 +100,7 @@ async function main(argv: string[]): Promise<number> {
   if (providerKind === undefined && command === "resume") {
     // A run paused for manual clips must not silently resume on another provider.
     const prior = await store.get(runId!);
-    if (prior.shots.some((sh) => sh.providerJobId?.startsWith("manual:"))) {
+    if (prior.shots.some((sh) => sh.providerJobId?.startsWith("manual:")) || existsSync(`${store.runDir(runId!)}/inbox`)) {
       providerKind = "manual";
       console.log("Run was started with the manual provider: resuming with --provider manual.");
     }
@@ -125,11 +140,12 @@ async function main(argv: string[]): Promise<number> {
     active.store = store;
     active.runId = runId;
     const before = await store.get(runId!);
-    if (before.state === "FINALIZED" || before.state === "NEEDS_REVIEW") {
+    const rerun = redo.length > 0 || values.reassemble;
+    if (!rerun && (before.state === "FINALIZED" || before.state === "NEEDS_REVIEW")) {
       console.log(`Run ${runId} is already ${before.state}; nothing to resume.`);
       return 0;
     }
-    job = await resumePipeline({ store, llm, provider, runId: runId!, signal: controller.signal, skipCreativeQa });
+    job = await resumePipeline({ store, llm, provider, runId: runId!, signal: controller.signal, skipCreativeQa, redo, reassemble: values.reassemble });
   } else {
     const brief = await loadBrief(values.brief);
     job = await runPipeline({ store, llm, brief, provider, signal: controller.signal, onJobCreated, skipCreativeQa });

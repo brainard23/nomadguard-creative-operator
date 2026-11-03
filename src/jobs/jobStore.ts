@@ -18,6 +18,7 @@ export interface JobPatch {
   error?: JobError;
   notes?: string[];
   shots?: Shot[];
+  artifacts?: Record<string, string>;
 }
 
 /** File-based job store: one folder per run holding job.json plus artifacts. */

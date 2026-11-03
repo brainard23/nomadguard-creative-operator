@@ -3,7 +3,7 @@ import type { Brief } from "../brief/schema.ts";
 import { ConfigError } from "../config.ts";
 import type { Storyboard, Strategy } from "../creative/schemas.ts";
 import type { LlmClient } from "../llm/types.ts";
-import type { SampledFrame } from "./frames.ts";
+import { END_CARD_ID, type SampledFrame } from "./frames.ts";
 
 export const DIMENSIONS = ["realism", "visual_consistency", "brief_adherence", "hook_strength", "advertising_quality"] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
@@ -57,7 +57,7 @@ export function decideCreativeQa(scores: CreativeScores, weakestSceneId: string,
   return { pass: reasons.length === 0, reasons };
 }
 
-const SYSTEM = `You are a strict creative director at a paid-social agency reviewing a finished vertical video ad before it ships. You are skeptical by default: most AI-generated ads have flaws and you find them. Judge ONLY what is visible in the supplied frames, never what the storyboard says should be there. Penalise AI artifacts heavily: warped or extra fingers and hands, distorted or melting faces, gibberish or misspelled on-screen text, objects that morph, and identity drift (character, wardrobe or setting changing between scenes).`;
+const SYSTEM = `You are a strict creative director at a paid-social agency reviewing a finished vertical video ad before it ships. You are skeptical by default: most AI-generated ads have flaws and you find them. Judge ONLY what is visible in the supplied frames, never what the storyboard says should be there. Penalise AI artifacts heavily: warped or extra fingers and hands, distorted or melting faces, gibberish or misspelled on-screen text, objects that morph, and identity drift (character, wardrobe or setting changing between scenes). The final frame is the branded end card (brand name, headline, call to action) and some scenes carry a notification card added in post: both are intentional motion graphics, not AI artifacts, so judge them as design, not realism.`;
 
 export interface CreativeQaInput {
   brief: Brief;
@@ -82,7 +82,9 @@ STORYBOARD (scenes in order, then a ${storyboard.end_card.duration}s end card)
 ${JSON.stringify(scenes, null, 2)}
 
 FRAMES (attached as images, in this order)
-${frames.map((f, i) => `${i + 1}. t=${f.t.toFixed(2)}s, scene ${f.scene_id}`).join("\n")}
+${frames.map((f, i) => `${i + 1}. t=${f.t.toFixed(2)}s, ${f.scene_id === END_CARD_ID ? "the end card (brand + CTA)" : `scene ${f.scene_id}`}`).join("\n")}
+
+The last frame is the end card: it carries the brand and call to action, so do not report missing branding if it shows them. Any notification card over a scene is an intentional graphic overlay added in post.
 
 Score each dimension as an INTEGER from 1 to 10 with a one-sentence note: ${DIMENSIONS.join(", ")}.
 - realism: photorealism and absence of AI artifacts

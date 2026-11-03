@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import type { Brief } from "../brief/schema.ts";
 import { BriefSchema } from "../brief/schema.ts";
 import type { JobStore } from "../jobs/jobStore.ts";
@@ -30,6 +32,10 @@ export interface PipelineOptions {
 
 export interface ResumeOptions extends Omit<PipelineOptions, "brief" | "onJobCreated"> {
   runId: string;
+  /** Scene ids whose shot is regenerated/re-imported; assembly and QA rerun. Works on finished runs too. */
+  redo?: string[];
+  /** Keep every shot and rerun only assembly + QA (e.g. after editing storyboard overlay/trimStart). */
+  reassemble?: boolean;
 }
 
 /** Jobs in these states are done; resume has nothing to do. */
@@ -63,6 +69,37 @@ export async function runPipeline(options: PipelineOptions): Promise<Job> {
   return runStages(makeContext(options, job.runId, options.brief), stagesFor(planOnly));
 }
 
+/** Notes written when a run parks in AWAITING_CLIPS; stale once it moves on. */
+const AWAITING_NOTE = /^awaiting clips for /;
+
+/**
+ * Prepares a finished (or failed) run for `--redo` / `--reassemble`: resets the named shots to
+ * PENDING and deletes their imported clips, drops final.mp4 + qa.json, and parks the job at PLANNED
+ * so the stages rerun (generation skips untouched shots, assembly and QA always run).
+ */
+export async function prepareRerun(store: JobStore, runId: string, redo: string[], reassemble: boolean): Promise<Job> {
+  const job = await store.get(runId);
+  const unknown = redo.filter((id) => !job.shots.some((s) => s.sceneId === id));
+  if (unknown.length) {
+    throw new Error(`Cannot redo ${unknown.join(", ")}: run ${runId} has no such shot (shots: ${job.shots.map((s) => s.sceneId).join(", ") || "none"}).`);
+  }
+  for (const id of redo) {
+    const shot = job.shots.find((s) => s.sceneId === id)!;
+    if (shot.clipPath) await rm(join(store.runDir(runId), shot.clipPath), { force: true });
+    await store.updateShot(runId, id, { state: "PENDING", attempts: 0, providerJobId: undefined, clipPath: undefined, error: undefined });
+  }
+  await rm(store.artifactPath(runId, "final"), { force: true });
+  await rm(store.artifactPath(runId, "qa"), { force: true });
+  const { final: _final, qa: _qa, ...artifacts } = (await store.get(runId)).artifacts;
+  const what = [redo.length ? `redo ${redo.join(", ")}` : "", reassemble ? "reassemble" : ""].filter(Boolean).join(" + ");
+  return store.update(runId, {
+    state: "PLANNED",
+    error: undefined,
+    artifacts,
+    notes: [...(await store.get(runId)).notes, `${what}: assembly and QA will rerun`],
+  });
+}
+
 /**
  * Continues an existing job: finished stages are skipped, a FAILED run restarts at the stage
  * it failed in, and generation re-polls (never resubmits) shots already submitted to the provider.
@@ -71,7 +108,8 @@ export async function runPipeline(options: PipelineOptions): Promise<Job> {
 export async function resumePipeline(options: ResumeOptions): Promise<Job> {
   const { store, runId } = options;
   const job = await store.get(runId);
-  if ((TERMINAL_STATES as readonly string[]).includes(job.state)) return job;
+  const rerun = (options.redo?.length ?? 0) > 0 || options.reassemble === true;
+  if (!rerun && (TERMINAL_STATES as readonly string[]).includes(job.state)) return job;
   const planOnly = !options.provider;
   if (!planOnly) await ensureMediaTools();
   let brief: Brief;
@@ -80,6 +118,7 @@ export async function resumePipeline(options: ResumeOptions): Promise<Job> {
   } catch (err) {
     throw new Error(`Cannot resume ${runId}: brief.json is missing or invalid (${(err as Error).message})`);
   }
+  if (rerun) await prepareRerun(store, runId, options.redo ?? [], options.reassemble === true);
   return runStages(makeContext(options, runId, brief), stagesFor(planOnly));
 }
 
@@ -91,7 +130,11 @@ export async function runStages(ctx: PipelineContext, stages: Stage[]): Promise<
   const { store, runId } = ctx;
   let current = "pipeline";
   try {
-    const job = await store.get(runId);
+    let job = await store.get(runId);
+    // Leaving AWAITING_CLIPS: its "awaiting clips for ..." notes are stale (generation re-adds one if it pauses again).
+    if (job.notes.some((n) => AWAITING_NOTE.test(n))) {
+      job = await store.update(runId, { notes: job.notes.filter((n) => !AWAITING_NOTE.test(n)) });
+    }
     const failedStage = job.state === "FAILED" ? job.error?.stage : undefined;
     const failedIndex = failedStage ? stages.findIndex((s) => s.name === failedStage || s.aliases?.includes(failedStage)) : -1;
     if (job.state === "FAILED") {

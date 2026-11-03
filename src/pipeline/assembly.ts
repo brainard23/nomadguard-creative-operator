@@ -18,7 +18,7 @@ export const assemblyStage: Stage = {
       if (shot?.state !== "SUCCEEDED" || !shot.clipPath) {
         throw new StageError("assembly", `Shot ${scene.id} has no finished clip.`, { sceneId: scene.id });
       }
-      return { path: join(runDir, shot.clipPath), seconds: scene.duration };
+      return { path: join(runDir, shot.clipPath), seconds: scene.duration, trimStart: scene.trimStart, overlay: scene.overlay };
     });
 
     try {

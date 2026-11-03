@@ -27,8 +27,9 @@ export function sceneForTime(storyboard: Storyboard, t: number): string {
 }
 
 /**
- * Timestamps for `count` frames: evenly spread between them (never in the end card):
- * the first at the hook (~0.75s) and the last in the middle of the last scene.
+ * Timestamps for `count` frames: `count - 1` evenly spread through the scenes (the first at the
+ * hook ~0.75s, the last in the middle of the last scene) plus exactly one in the middle of the
+ * end card, always last, so the reviewer sees the brand and CTA.
  */
 export function planFrameTimes(storyboard: Storyboard, videoDuration: number, count = DEFAULT_FRAME_COUNT): number[] {
   const last = storyboard.scenes.at(-1)!;
@@ -39,8 +40,14 @@ export function planFrameTimes(storyboard: Storyboard, videoDuration: number, co
 
   const hook = clamp(Math.min(HOOK_SECONDS, contentEnd / 2));
   const lastMid = clamp(Math.max(lastStart, 0) + last.duration / 2);
+  const endCardSeconds = videoDuration - contentEnd;
+  const withEndCard = count > 1 && endCardSeconds > 0.2;
+  const sceneFrames = withEndCard ? count - 1 : count;
   // Evenly spaced from the hook frame to the middle of the last scene.
-  const times = Array.from({ length: count }, (_, i) => (count === 1 ? hook : hook + ((lastMid - hook) * i) / (count - 1)));
+  const times = Array.from({ length: sceneFrames }, (_, i) =>
+    sceneFrames === 1 ? hook : hook + ((lastMid - hook) * i) / (sceneFrames - 1),
+  );
+  if (withEndCard) times.push(clamp(contentEnd + endCardSeconds / 2));
   return [...new Set(times.map(round))].sort((a, b) => a - b);
 }
 

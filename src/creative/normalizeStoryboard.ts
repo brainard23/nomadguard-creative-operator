@@ -65,6 +65,31 @@ function stepUp(d: number): number {
   return VEO_CLIP_SECONDS.find((c) => c > d) ?? d;
 }
 
+/** Minimum time an overlay stays on screen once it appears. */
+const MIN_OVERLAY_SECONDS = 0.5;
+
+/** Keeps `trimStart` >= 0 and the overlay window inside the (already snapped) scene. Mutates `scene`. */
+function clampScene(scene: Scene, adjustments: string[]): void {
+  if (scene.trimStart !== undefined && !(scene.trimStart >= 0)) {
+    adjustments.push(`scene ${scene.id}: trimStart ${scene.trimStart}s -> 0s (cannot be negative)`);
+    scene.trimStart = 0;
+  }
+  if (!scene.overlay) return;
+  const o = { ...scene.overlay };
+  const latestStart = Math.max(0, scene.duration - MIN_OVERLAY_SECONDS);
+  const at = Math.min(Math.max(0, Number.isFinite(o.at) ? o.at : 0), latestStart);
+  if (at !== o.at) adjustments.push(`scene ${scene.id}: overlay at ${o.at}s -> ${at}s (kept inside the scene)`);
+  o.at = at;
+  if (o.duration !== undefined) {
+    const max = scene.duration - at;
+    if (o.duration > max) {
+      adjustments.push(`scene ${scene.id}: overlay duration ${o.duration}s -> ${max}s (kept inside the scene)`);
+      o.duration = max;
+    }
+  }
+  scene.overlay = o;
+}
+
 export function normalizeStoryboard(input: Storyboard): NormalizedStoryboard {
   const { scenes: inScenes, end_card: inEnd } = input;
 
@@ -144,6 +169,8 @@ export function normalizeStoryboard(input: Storyboard): NormalizedStoryboard {
     adjustments.push(`scene ${target.id}: ${target.duration}s -> ${next}s (total under ${MIN_TOTAL_SECONDS}s)`);
     target.duration = next;
   }
+
+  for (const scene of scenes) clampScene(scene, adjustments);
 
   return {
     storyboard: { ...input, scenes, end_card: { ...inEnd, duration: endDuration } },

@@ -35,9 +35,29 @@ describe("planFrameTimes", () => {
     expect(ts[0]).toBeGreaterThanOrEqual(0.5);
     expect(ts[0]).toBeLessThanOrEqual(1);
     expect(ts.some((t) => sceneForTime(sb, t) === "s3")).toBe(true);
+    expect(ts.filter((t) => sceneForTime(sb, t) === "end_card")).toHaveLength(1);
     expect([...ts].sort((a, b) => a - b)).toEqual(ts);
     expect(new Set(ts).size).toBe(6);
     expect(ts.every((t) => t > 0 && t < 14)).toBe(true);
+  });
+});
+
+describe("planFrameTimes end card", () => {
+  it("makes the last frame exactly one from the middle of the end card", () => {
+    const sb = storyboard([4, 4, 4], 2);
+    const ts = planFrameTimes(sb, 14, 6);
+    expect(ts.at(-1)).toBe(13);
+    expect(sceneForTime(sb, ts.at(-1)!)).toBe("end_card");
+    expect(ts.slice(0, -1).every((t) => t < 12)).toBe(true);
+    expect(ts.slice(0, -1).at(-1)).toBe(10);
+  });
+  it("keeps the requested count and tags the last frame end_card when sampling a real video", async () => {
+    const clip = join(dir, "ec.mp4");
+    await makeClip(clip, { width: 270, height: 480, seconds: 10 });
+    const frames = await sampleFrames(clip, join(dir, "ec-frames"), storyboard([4, 4], 2), { count: 6 });
+    expect(frames).toHaveLength(6);
+    expect(frames.at(-1)).toMatchObject({ scene_id: "end_card", t: 9 });
+    expect(frames.filter((f) => f.scene_id === "end_card")).toHaveLength(1);
   });
 });
 

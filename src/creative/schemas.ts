@@ -44,6 +44,17 @@ export const StyleGuideSchema = z.object({
 
 export const ScenePurposeSchema = z.enum(["hook", "problem", "turn", "resolution", "payoff"]);
 
+/**
+ * Deterministic notification card composited over a scene in post (Veo cannot render legible UI).
+ * `at` / `duration` are seconds from the scene start; `duration` defaults to the rest of the scene.
+ */
+export const OverlaySchema = z.object({
+  title: z.string().min(1),
+  body: z.string().min(1),
+  at: z.number().default(0.5),
+  duration: z.number().positive().optional(),
+});
+
 export const SceneSchema = z.object({
   id: z.string().min(1),
   duration: z.number().positive(),
@@ -51,6 +62,9 @@ export const SceneSchema = z.object({
   camera: z.string().min(1),
   purpose: ScenePurposeSchema,
   dialogue_or_sfx: z.string().min(1).optional(),
+  overlay: OverlaySchema.optional(),
+  /** Seconds to skip at the start of the imported clip (default 0). */
+  trimStart: z.number().optional(),
 });
 
 export const EndCardSchema = z.object({
@@ -71,5 +85,6 @@ export const StoryboardSchema = z
   });
 
 export type StyleGuide = z.infer<typeof StyleGuideSchema>;
+export type Overlay = z.infer<typeof OverlaySchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type Storyboard = z.infer<typeof StoryboardSchema>;
