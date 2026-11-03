@@ -1,0 +1,34 @@
+import type { Scene, Storyboard } from "../src/creative/schemas.ts";
+
+export function scene(id: string, duration: number, purpose: Scene["purpose"] = "problem"): Scene {
+  return {
+    id,
+    duration,
+    description: `Scene ${id} description`,
+    camera: "medium shot, slow push-in",
+    purpose,
+  };
+}
+
+export function storyboard(
+  durations: number[],
+  endCard = 2,
+  overrides: Partial<Storyboard> = {},
+): Storyboard {
+  return {
+    style_guide: {
+      character: "a woman in her early thirties with shoulder-length dark hair",
+      wardrobe: "a camel wool coat over a white tee",
+      setting: "a modern international airport terminal at dusk",
+      palette: "warm amber and deep navy",
+      lens: "35mm anamorphic",
+      grade: "soft teal-orange cinematic grade",
+    },
+    scenes: durations.map((d, i) => scene(`s${i + 1}`, d, i === 0 ? "hook" : "problem")),
+    end_card: { duration: endCard, headline: "Protected.", cta: "Get NomadGuard" },
+    ...overrides,
+  };
+}
+
+export const total = (s: Storyboard) =>
+  s.scenes.reduce((sum, x) => sum + x.duration, 0) + s.end_card.duration;
