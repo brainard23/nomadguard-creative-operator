@@ -32,3 +32,14 @@ export function storyboard(
 
 export const total = (s: Storyboard) =>
   s.scenes.reduce((sum, x) => sum + x.duration, 0) + s.end_card.duration;
+
+import { ffmpeg } from "../src/media/exec.ts";
+
+/** Real ffmpeg-made test clip with an audio track. */
+export async function makeClip(path: string, opts: { width: number; height: number; seconds: number }): Promise<void> {
+  await ffmpeg([
+    "-f", "lavfi", "-i", `testsrc2=size=${opts.width}x${opts.height}:rate=15:duration=${opts.seconds}`,
+    "-f", "lavfi", "-i", `sine=frequency=440:duration=${opts.seconds}`,
+    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path,
+  ]);
+}
