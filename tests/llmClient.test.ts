@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { BaseLlmClient } from "../src/llm/baseClient.ts";
 import { FakeLlmClient } from "../src/llm/fakeClient.ts";
 import { LlmOutputError } from "../src/llm/types.ts";
 
@@ -68,5 +69,42 @@ describe("generateJsonFromImages", () => {
     await expect(
       llm.generateJsonFromImages("p", [{ path: "/nonexistent.jpg", mimeType: "image/jpeg" }], Schema, { task: "t" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("transport retry", () => {
+  class Flaky extends BaseLlmClient {
+    calls = 0;
+    constructor(private readonly errors: unknown[]) {
+      super({ sleep: async () => undefined });
+    }
+    protected override async complete(): Promise<string> {
+      this.calls++;
+      const e = this.errors.shift();
+      if (e) throw e;
+      return JSON.stringify(good);
+    }
+  }
+  const apiError = (status: number, text: string) => Object.assign(new Error(`{"error":{"code":${status},"status":"${text}"}}`), { status });
+
+  it("retries a 503 UNAVAILABLE twice, then succeeds", async () => {
+    const llm = new Flaky([apiError(503, "UNAVAILABLE"), apiError(503, "UNAVAILABLE")]);
+    await expect(llm.generateJson("p", Schema)).resolves.toEqual(good);
+    expect(llm.calls).toBe(3);
+  });
+  it("does not retry a 400", async () => {
+    const llm = new Flaky([apiError(400, "INVALID_ARGUMENT")]);
+    await expect(llm.generateJson("p", Schema)).rejects.toThrow(/INVALID_ARGUMENT/);
+    expect(llm.calls).toBe(1);
+  });
+  it("gives up after 4 attempts", async () => {
+    const llm = new Flaky(Array.from({ length: 6 }, () => apiError(429, "RESOURCE_EXHAUSTED")));
+    await expect(llm.generateJson("p", Schema)).rejects.toThrow();
+    expect(llm.calls).toBe(4);
+  });
+  it("retries network errors and does not spend the repair attempt on transport retries", async () => {
+    const llm = new Flaky([new Error("fetch failed")]);
+    await expect(llm.generateJson("p", Schema)).resolves.toEqual(good);
+    expect(llm.calls).toBe(2);
   });
 });

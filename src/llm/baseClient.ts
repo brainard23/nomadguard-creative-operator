@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { z, type ZodType } from "zod";
+import { retry, type BackoffPolicy } from "../util/retry.ts";
+import { classifyVeoError } from "../video/veoErrors.ts";
 import { LlmOutputError, type GenerateJsonOptions, type LlmClient, type LlmImage, type ResolvedImage } from "./types.ts";
 
 export interface CompleteRequest {
@@ -13,6 +15,12 @@ export interface CompleteRequest {
   images?: ResolvedImage[];
 }
 
+/** Transport retries: 4 attempts, ~2s base backoff. Separate from (and not counted by) the JSON repair retry. */
+export const DEFAULT_LLM_RETRY: BackoffPolicy = { maxAttempts: 4, baseDelayMs: 2000, maxDelayMs: 30_000 };
+
+/** 429/RESOURCE_EXHAUSTED, 500/503/UNAVAILABLE, DEADLINE_EXCEEDED and network errors; reuses the Vertex/Veo classifier. */
+export const isTransientLlmError = (err: unknown): boolean => classifyVeoError(err).retryable;
+
 /**
  * Shared validation + repair logic. Subclasses only implement `complete` (raw text out).
  * Invalid output (bad JSON or schema mismatch) gets exactly ONE repair attempt that
@@ -20,6 +28,13 @@ export interface CompleteRequest {
  */
 export abstract class BaseLlmClient implements LlmClient {
   protected abstract complete(req: CompleteRequest): Promise<string>;
+
+  private readonly retryPolicy: BackoffPolicy;
+
+  /** `retryPolicy` is injectable so tests can use a no-op sleep. */
+  constructor(retryPolicy: Partial<BackoffPolicy> = {}) {
+    this.retryPolicy = { ...DEFAULT_LLM_RETRY, ...retryPolicy };
+  }
 
   generateJson<T>(prompt: string, schema: ZodType<T>, opts: GenerateJsonOptions = {}): Promise<T> {
     return this.run(prompt, schema, opts);
@@ -49,7 +64,9 @@ export abstract class BaseLlmClient implements LlmClient {
     let issues = "";
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      raw = await this.complete({ prompt: currentPrompt, opts, jsonSchema, attempt, images });
+      const req = { prompt: currentPrompt, opts, jsonSchema, attempt, images };
+      // Transient transport errors retry inside this attempt, so they never consume the repair attempt.
+      raw = await retry(() => this.complete(req), { ...this.retryPolicy, isRetryable: isTransientLlmError });
       const result = parseAndValidate(raw, schema);
       if (result.ok) return result.value;
       issues = result.issues;

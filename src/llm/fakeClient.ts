@@ -18,7 +18,7 @@ export class FakeLlmClient extends BaseLlmClient {
   private readonly failTasks: Record<string, Error>;
 
   constructor(options: FakeLlmOptions = {}) {
-    super();
+    super({ baseDelayMs: 0, maxDelayMs: 0 });
     this.fixtures = options.fixtures ?? DEFAULT_FIXTURES;
     this.invalid = Object.fromEntries(
       Object.entries(options.invalidOutputs ?? {}).map(([k, v]) => [k, [...v]]),
