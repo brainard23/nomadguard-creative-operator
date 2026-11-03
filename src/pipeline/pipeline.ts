@@ -25,6 +25,7 @@ export interface PipelineOptions {
   signal?: AbortSignal;
   /** Called as soon as the run id exists (lets the CLI report it if the process is killed). */
   onJobCreated?: (runId: string) => void;
+  skipCreativeQa?: boolean;
 }
 
 export interface ResumeOptions extends Omit<PipelineOptions, "brief" | "onJobCreated"> {
@@ -49,6 +50,7 @@ function makeContext(options: PipelineOptions | ResumeOptions, runId: string, br
     pollTimeoutMs: options.pollTimeoutMs ?? 15 * 60_000,
     retry: options.retry,
     signal: options.signal,
+    skipCreativeQa: options.skipCreativeQa,
   };
 }
 

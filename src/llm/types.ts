@@ -11,11 +11,25 @@ export interface GenerateJsonOptions {
 /**
  * Boundary to an LLM that returns schema-validated JSON. Implementations own the
  * model call, JSON-mode request, validation and one repair retry.
- * A `generateJsonFromImages(prompt, images, schema, opts?)` sibling (S5, creative QA)
- * will be added alongside `generateJson`; it reuses the same validation/repair core.
+ * `generateJsonFromImages` is the vision sibling and shares the same validation/repair core.
  */
 export interface LlmClient {
   generateJson<T>(prompt: string, schema: ZodType<T>, opts?: GenerateJsonOptions): Promise<T>;
+  generateJsonFromImages<T>(
+    prompt: string,
+    images: LlmImage[],
+    schema: ZodType<T>,
+    opts?: GenerateJsonOptions,
+  ): Promise<T>;
+}
+
+/** An image input: either a file path (read at call time) or raw bytes. */
+export type LlmImage = { mimeType: string } & ({ path: string; data?: never } | { data: Uint8Array; path?: never });
+
+/** An image with its bytes resolved, as handed to provider implementations. */
+export interface ResolvedImage {
+  data: Uint8Array;
+  mimeType: string;
 }
 
 export class LlmOutputError extends Error {

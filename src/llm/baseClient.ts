@@ -1,5 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { z, type ZodType } from "zod";
-import { LlmOutputError, type GenerateJsonOptions, type LlmClient } from "./types.ts";
+import { LlmOutputError, type GenerateJsonOptions, type LlmClient, type LlmImage, type ResolvedImage } from "./types.ts";
 
 export interface CompleteRequest {
   prompt: string;
@@ -8,6 +9,8 @@ export interface CompleteRequest {
   jsonSchema: Record<string, unknown>;
   /** 0 for the first attempt, 1 for the repair attempt. */
   attempt: number;
+  /** Images to send alongside the prompt (same set on the repair attempt). */
+  images?: ResolvedImage[];
 }
 
 /**
@@ -18,10 +21,27 @@ export interface CompleteRequest {
 export abstract class BaseLlmClient implements LlmClient {
   protected abstract complete(req: CompleteRequest): Promise<string>;
 
-  async generateJson<T>(
+  generateJson<T>(prompt: string, schema: ZodType<T>, opts: GenerateJsonOptions = {}): Promise<T> {
+    return this.run(prompt, schema, opts);
+  }
+
+  async generateJsonFromImages<T>(
     prompt: string,
+    images: LlmImage[],
     schema: ZodType<T>,
     opts: GenerateJsonOptions = {},
+  ): Promise<T> {
+    const resolved = await Promise.all(
+      images.map(async (i) => ({ data: i.path !== undefined ? await readFile(i.path) : i.data!, mimeType: i.mimeType })),
+    );
+    return this.run(prompt, schema, opts, resolved);
+  }
+
+  private async run<T>(
+    prompt: string,
+    schema: ZodType<T>,
+    opts: GenerateJsonOptions,
+    images?: ResolvedImage[],
   ): Promise<T> {
     const jsonSchema = toJsonSchema(schema);
     let currentPrompt = prompt;
@@ -29,7 +49,7 @@ export abstract class BaseLlmClient implements LlmClient {
     let issues = "";
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      raw = await this.complete({ prompt: currentPrompt, opts, jsonSchema, attempt });
+      raw = await this.complete({ prompt: currentPrompt, opts, jsonSchema, attempt, images });
       const result = parseAndValidate(raw, schema);
       if (result.ok) return result.value;
       issues = result.issues;

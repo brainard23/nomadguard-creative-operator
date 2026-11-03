@@ -9,4 +9,4 @@ export function createLlmClient(kind: LlmKind): LlmClient {
   return kind === "fake" ? new FakeLlmClient() : new VertexGeminiClient(loadVertexConfig());
 }
 
-export { LlmOutputError, type LlmClient, type GenerateJsonOptions } from "./types.ts";
+export { LlmOutputError, type LlmClient, type GenerateJsonOptions, type LlmImage } from "./types.ts";

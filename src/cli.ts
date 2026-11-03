@@ -13,8 +13,8 @@ import { createVideoProvider, type ProviderKind } from "./video/index.ts";
 if (existsSync(".env")) process.loadEnvFile(".env");
 
 const USAGE = `Usage:
-  pnpm start run [--plan-only] [--provider mock|veo] [--brief <path>] [--llm fake|vertex]
-  pnpm start resume <runId> [--plan-only] [--provider mock|veo] [--llm fake|vertex]
+  pnpm start run [--plan-only] [--provider mock|veo] [--brief <path>] [--llm fake|vertex] [--skip-creative-qa]
+  pnpm start resume <runId> [--plan-only] [--provider mock|veo] [--llm fake|vertex] [--skip-creative-qa]
   pnpm start status [runId]
 
 Options:
@@ -22,7 +22,8 @@ Options:
   --provider    Video provider: mock (offline) or veo (Veo 3.1 on Vertex AI).
                 Default: veo if GOOGLE_CLOUD_PROJECT is set, otherwise mock
   --brief       Path to the brief JSON (default: ${DEFAULT_BRIEF_PATH})
-  --llm         LLM client: vertex (default) or fake (offline fixtures)`;
+  --llm         LLM client: vertex (default) or fake (offline fixtures)
+  --skip-creative-qa  Skip the Gemini vision review of sampled frames (technical QA still runs)`;
 
 /** Run being executed, so a fatal error or signal can still be recorded on the job. */
 const active: { store?: JobStore; runId?: string } = {};
@@ -48,6 +49,7 @@ async function main(argv: string[]): Promise<number> {
       brief: { type: "string", default: DEFAULT_BRIEF_PATH },
       llm: { type: "string", default: "vertex" },
       provider: { type: "string" },
+      "skip-creative-qa": { type: "boolean", default: false },
     },
   });
   const [command, runId] = positionals;
@@ -92,6 +94,8 @@ async function main(argv: string[]): Promise<number> {
 
   const llm = createLlmClient(values.llm as LlmKind);
   const provider = values["plan-only"] ? undefined : createVideoProvider(providerKind as ProviderKind);
+  const skipCreativeQa = values["skip-creative-qa"];
+  if (skipCreativeQa) console.log("Creative QA skipped (--skip-creative-qa).");
 
   const controller = new AbortController();
   process.once("SIGINT", () => {
@@ -112,10 +116,10 @@ async function main(argv: string[]): Promise<number> {
       console.log(`Run ${runId} is already ${before.state}; nothing to resume.`);
       return 0;
     }
-    job = await resumePipeline({ store, llm, provider, runId: runId!, signal: controller.signal });
+    job = await resumePipeline({ store, llm, provider, runId: runId!, signal: controller.signal, skipCreativeQa });
   } else {
     const brief = await loadBrief(values.brief);
-    job = await runPipeline({ store, llm, brief, provider, signal: controller.signal, onJobCreated });
+    job = await runPipeline({ store, llm, brief, provider, signal: controller.signal, onJobCreated, skipCreativeQa });
   }
 
   console.log(formatJobStatus(job, store.runDir(job.runId)));

@@ -80,4 +80,16 @@ export const DEFAULT_FIXTURES: Record<string, unknown> = {
     ],
     end_card: { duration: 2, headline: "Travel with confidence.", cta: "Get NomadGuard" },
   },
+  creative_qa: {
+    scores: {
+      realism: { score: 8, note: "Photoreal terminal, natural lighting and believable crowd." },
+      visual_consistency: { score: 8, note: "Same woman, coat and terminal across scenes." },
+      brief_adherence: { score: 8, note: "Shows the disruption problem and the calm resolution." },
+      hook_strength: { score: 8, note: "The red departure board reads instantly in the first second." },
+      advertising_quality: { score: 8, note: "Polished cinematic look with a clear payoff." },
+    },
+    weakest_scene_id: "s2",
+    issues: [],
+    verdict_summary: "Offline fixture: a coherent, polished ad with no visible artifacts.",
+  },
 };

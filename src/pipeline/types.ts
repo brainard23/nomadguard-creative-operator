@@ -18,6 +18,8 @@ export interface PipelineContext {
   retry?: Partial<BackoffPolicy>;
   /** Aborted on SIGINT: stages stop at the next safe point and the job keeps its state. */
   signal?: AbortSignal;
+  /** Skip creative (vision) QA; technical QA still runs. */
+  skipCreativeQa?: boolean;
 }
 
 /** A pipeline stage: `state` is set while it runs, `doneState` (optional) once it completes. */

@@ -45,3 +45,28 @@ describe("LlmClient validation + repair", () => {
     expect(llm.calls).toHaveLength(2);
   });
 });
+
+describe("generateJsonFromImages", () => {
+  const img = { data: new Uint8Array([1, 2, 3]), mimeType: "image/jpeg" };
+  it("validates, repairs once, and records the image count per call", async () => {
+    const llm = new FakeLlmClient({ fixtures: { t: good }, invalidOutputs: { t: ["bad"] } });
+    await expect(llm.generateJsonFromImages("p", [img, img], Schema, { task: "t" })).resolves.toEqual(good);
+    expect(llm.calls.map((c) => c.images)).toEqual([2, 2]);
+  });
+  it("throws LlmOutputError after two invalid outputs", async () => {
+    const llm = new FakeLlmClient({ fixtures: { t: good }, invalidOutputs: { t: ["a", "b"] } });
+    await expect(llm.generateJsonFromImages("p", [img], Schema, { task: "t" })).rejects.toBeInstanceOf(LlmOutputError);
+  });
+  it("reads image bytes from a path", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const p = join(await mkdtemp(join(tmpdir(), "img-")), "a.jpg");
+    await writeFile(p, "x");
+    const llm = new FakeLlmClient({ fixtures: { t: good } });
+    await expect(llm.generateJsonFromImages("p", [{ path: p, mimeType: "image/jpeg" }], Schema, { task: "t" })).resolves.toEqual(good);
+    await expect(
+      llm.generateJsonFromImages("p", [{ path: "/nonexistent.jpg", mimeType: "image/jpeg" }], Schema, { task: "t" }),
+    ).rejects.toThrow();
+  });
+});

@@ -86,7 +86,7 @@ describe("permanent failures", () => {
     expect(job.state).toBe("FINALIZED");
     expect(job.error).toBeUndefined();
     expect(fixed.generated).toEqual(["s2"]); // s1 and s3 are not regenerated
-    expect(llm.calls).toHaveLength(0); // planning is not redone
+    expect(llm.calls.filter((c) => c.task !== "creative_qa")).toHaveLength(0); // planning is not redone (creative QA still runs)
     expect(shot(job, "s2")).toMatchObject({ state: "SUCCEEDED", attempts: 1 }); // fresh attempt budget
     expect(job.notes.join("\n")).toMatch(/resumed after failure in stage "generation"/);
   });
@@ -136,7 +136,7 @@ describe("crash and resume", () => {
     expect(resumed.generated).toEqual([]); // nothing resubmitted, nothing regenerated
     expect(new Set(resumed.polled)).toEqual(new Set([s2.providerJobId])); // only the pending job was polled
     expect(shot(job, "s2")).toMatchObject({ state: "SUCCEEDED", attempts: 1, providerJobId: s2.providerJobId });
-    expect(llm.calls).toHaveLength(0);
+    expect(llm.calls.filter((c) => c.task !== "creative_qa")).toHaveLength(0);
   });
 
   it("resume on a FINALIZED run changes nothing", async () => {
