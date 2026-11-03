@@ -16,7 +16,8 @@ const USAGE = `Usage:
 
 Options:
   --plan-only   Stop after strategy, storyboard and prompts (no video generation)
-  --provider    Video provider: mock (default, offline) or veo (arrives in S4)
+  --provider    Video provider: mock (offline) or veo (Veo 3.1 on Vertex AI).
+                Default: veo if GOOGLE_CLOUD_PROJECT is set, otherwise mock
   --brief       Path to the brief JSON (default: ${DEFAULT_BRIEF_PATH})
   --llm         LLM client: vertex (default) or fake (offline fixtures)`;
 
@@ -28,7 +29,7 @@ async function main(argv: string[]): Promise<number> {
       "plan-only": { type: "boolean", default: false },
       brief: { type: "string", default: DEFAULT_BRIEF_PATH },
       llm: { type: "string", default: "vertex" },
-      provider: { type: "string", default: "mock" },
+      provider: { type: "string" },
     },
   });
 
@@ -40,14 +41,25 @@ async function main(argv: string[]): Promise<number> {
     console.error(`Unknown --llm "${values.llm}" (expected fake or vertex).\n\n${USAGE}`);
     return 2;
   }
-  if (values.provider !== "mock" && values.provider !== "veo") {
-    console.error(`Unknown --provider "${values.provider}" (expected mock or veo).\n\n${USAGE}`);
+  let providerKind = values.provider;
+  if (providerKind === undefined) {
+    providerKind = process.env.GOOGLE_CLOUD_PROJECT?.trim() ? "veo" : "mock";
+    if (!values["plan-only"]) {
+      console.log(
+        providerKind === "veo"
+          ? "No --provider given: using veo (GOOGLE_CLOUD_PROJECT is set). Pass --provider mock for an offline run."
+          : "No --provider given and GOOGLE_CLOUD_PROJECT is unset: using mock. Pass --provider veo for real video.",
+      );
+    }
+  }
+  if (providerKind !== "mock" && providerKind !== "veo") {
+    console.error(`Unknown --provider "${providerKind}" (expected mock or veo).\n\n${USAGE}`);
     return 2;
   }
 
   const brief = await loadBrief(values.brief);
   const llm = createLlmClient(values.llm as LlmKind);
-  const provider = values["plan-only"] ? undefined : createVideoProvider(values.provider as ProviderKind);
+  const provider = values["plan-only"] ? undefined : createVideoProvider(providerKind as ProviderKind);
   const store = new JobStore();
   const job = await runPipeline({ store, llm, brief, provider });
 
