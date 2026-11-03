@@ -3,7 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { ffmpeg } from "../media/exec.ts";
 import { renderLabelPng } from "../media/textImage.ts";
-import type { GenerateRequest, VideoJobError, VideoJobStatus, VideoProvider } from "./types.ts";
+import type { GenerateRequest, ResultTarget, VideoJobError, VideoJobStatus, VideoProvider } from "./types.ts";
 
 export interface MockProviderOptions {
   /** Polls that report "running" before the job completes. Default 1. */
@@ -53,7 +53,7 @@ export class MockVideoProvider implements VideoProvider {
     }
   }
 
-  async getResult(providerJobId: string): Promise<{ clipPath: string }> {
+  async getResult(providerJobId: string, _target?: ResultTarget): Promise<{ clipPath: string }> {
     return { clipPath: this.job(providerJobId).clipPath };
   }
 

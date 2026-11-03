@@ -1,10 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GenerateVideosOperation, GoogleGenAI } from "@google/genai";
 import type { VeoConfig } from "../config.ts";
 import { classifyVeoError } from "./veoErrors.ts";
-import type { GenerateRequest, VideoJobError, VideoJobStatus, VideoProvider } from "./types.ts";
+import { VideoProviderError, type GenerateRequest, type ResultTarget, type VideoJobError, type VideoJobStatus, type VideoProvider } from "./types.ts";
 
 /** The slice of a Veo operation this provider reads (structurally satisfied by the SDK's operation). */
 export interface VeoOperation {
@@ -67,31 +66,28 @@ class Semaphore {
   }
 }
 
-interface JobInfo {
-  sceneId: string;
-  outputDir: string;
+function toProviderError(err: unknown): VideoProviderError {
+  if (err instanceof VideoProviderError) return err;
+  const { message, retryable, code } = classifyVeoError(err);
+  return new VideoProviderError(message, { retryable, code, cause: err });
 }
-
-const opId = (name: string) => name.split("/").pop() ?? name;
 
 /** Veo 3.1 on Vertex AI. `providerJobId` is the long-running operation name. */
 export class VeoVideoProvider implements VideoProvider {
   private readonly client: VeoClient;
   private readonly semaphore: Semaphore;
-  private readonly jobs = new Map<string, JobInfo>();
 
   constructor(
     private readonly config: VeoConfig,
     client?: VeoClient,
-    /** Where results go when getResult is called for a job this process did not submit (resume). */
-    private readonly fallbackOutputDir: string = join(tmpdir(), "nomadguard-veo"),
   ) {
     this.client = client ?? createSdkVeoClient(config);
     this.semaphore = new Semaphore(config.maxConcurrency);
   }
 
   async generate(req: GenerateRequest): Promise<{ providerJobId: string }> {
-    const op = await this.semaphore.run(() =>
+    const op = await this.semaphore
+      .run(() =>
       this.client.generateVideos({
         model: this.config.model,
         prompt: req.prompt,
@@ -105,9 +101,11 @@ export class VeoVideoProvider implements VideoProvider {
           personGeneration: "allow_adult",
         },
       }),
-    );
-    if (!op.name) throw new Error("Veo did not return an operation name.");
-    this.jobs.set(op.name, { sceneId: req.sceneId, outputDir: req.outputDir });
+      )
+      .catch((err) => {
+        throw toProviderError(err);
+      });
+    if (!op.name) throw new VideoProviderError("Veo did not return an operation name.", { retryable: true, code: "NO_OPERATION" });
     return { providerJobId: op.name };
   }
 
@@ -124,24 +122,30 @@ export class VeoVideoProvider implements VideoProvider {
     return { state: "succeeded" };
   }
 
-  async getResult(providerJobId: string): Promise<{ clipPath: string }> {
-    const op = await this.client.getVideosOperation(providerJobId);
-    if (!op.done || op.error) throw new Error(`Veo operation ${providerJobId} is not successfully done.`);
-    const video = firstVideo(op);
-    if (!video) throw new Error(noVideoError(op).message);
-    if (!video.videoBytes) {
-      throw Object.assign(
-        new Error(
+  async getResult(providerJobId: string, target: ResultTarget): Promise<{ clipPath: string }> {
+    try {
+      const op = await this.client.getVideosOperation(providerJobId);
+      if (!op.done || op.error) {
+        throw new VideoProviderError(`Veo operation ${providerJobId} is not successfully done.`, { retryable: false, code: "NOT_DONE" });
+      }
+      const video = firstVideo(op);
+      if (!video) {
+        const e = noVideoError(op);
+        throw new VideoProviderError(e.message, e);
+      }
+      if (!video.videoBytes) {
+        throw new VideoProviderError(
           `Veo returned a GCS uri (${video.uri ?? "unknown"}) instead of inline bytes. OUTPUT_GCS_URI is not supported in this version; leave outputGcsUri unset.`,
-        ),
-        { retryable: false },
-      );
+          { retryable: false, code: "GCS_OUTPUT_UNSUPPORTED" },
+        );
+      }
+      await mkdir(target.outputDir, { recursive: true });
+      const clipPath = join(target.outputDir, `${target.sceneId}.mp4`);
+      await writeFile(clipPath, Buffer.from(video.videoBytes, "base64"));
+      return { clipPath };
+    } catch (err) {
+      throw toProviderError(err);
     }
-    const info = this.jobs.get(providerJobId) ?? { sceneId: opId(providerJobId), outputDir: this.fallbackOutputDir };
-    await mkdir(info.outputDir, { recursive: true });
-    const clipPath = join(info.outputDir, `${info.sceneId}.mp4`);
-    await writeFile(clipPath, Buffer.from(video.videoBytes, "base64"));
-    return { clipPath };
   }
 }
 

@@ -58,7 +58,7 @@ export const generationStage: Stage = {
             }
             await sleep(ctx.pollIntervalMs);
           }
-          const { clipPath } = await provider.getResult(providerJobId);
+          const { clipPath } = await provider.getResult(providerJobId, { sceneId: id, outputDir });
           await store.updateShot(runId, id, { state: "SUCCEEDED", clipPath: relative(store.runDir(runId), clipPath) });
         } catch (err) {
           if (err instanceof StageError) throw err;

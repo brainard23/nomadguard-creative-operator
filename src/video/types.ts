@@ -22,10 +22,28 @@ export interface VideoJobStatus {
   error?: VideoJobError;
 }
 
+/** Where to write the finished clip: `<outputDir>/<sceneId>.mp4`. Passed explicitly so getResult is stateless. */
+export interface ResultTarget {
+  sceneId: string;
+  outputDir: string;
+}
+
+/** Typed provider failure thrown by generate/getResult so callers can tell retryable from permanent. */
+export class VideoProviderError extends Error {
+  override name = "VideoProviderError";
+  code?: string;
+  retryable: boolean;
+  constructor(message: string, opts: { retryable: boolean; code?: string; cause?: unknown }) {
+    super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
+    this.retryable = opts.retryable;
+    this.code = opts.code;
+  }
+}
+
 /** Async video generation boundary. The workflow depends only on this interface. */
 export interface VideoProvider {
   generate(req: GenerateRequest): Promise<{ providerJobId: string }>;
   getStatus(providerJobId: string): Promise<VideoJobStatus>;
   /** Only valid once status is "succeeded". */
-  getResult(providerJobId: string): Promise<{ clipPath: string }>;
+  getResult(providerJobId: string, target: ResultTarget): Promise<{ clipPath: string }>;
 }

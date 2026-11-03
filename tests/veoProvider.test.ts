@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadVeoConfig } from "../src/config.ts";
 import { classifyVeoError } from "../src/video/veoErrors.ts";
+import { VideoProviderError } from "../src/video/types.ts";
 import { VeoVideoProvider, type VeoClient, type VeoOperation } from "../src/video/veoProvider.ts";
 
 const OP = "projects/p/locations/us-central1/publishers/google/models/veo-3.1-generate-001/operations/abc-123";
@@ -98,19 +99,36 @@ describe("VeoVideoProvider", () => {
       done: true,
       response: { generatedVideos: [{ video: { videoBytes: bytes.toString("base64") } }] },
     });
-    const provider = new VeoVideoProvider(config, client);
     const r = await req();
-    await provider.generate(r);
-    const { clipPath } = await provider.getResult(OP);
+    // fresh provider: only the operation name + target
+    const { clipPath } = await new VeoVideoProvider(config, client).getResult(OP, r);
     expect(clipPath).toBe(join(r.outputDir, "s1.mp4"));
     expect((await readFile(clipPath)).equals(bytes)).toBe(true);
   });
 
   it("rejects a GCS uri result with a clear non-retryable error", async () => {
     const { client } = stubClient({ done: true, response: { generatedVideos: [{ video: { uri: "gs://b/x.mp4" } }] } });
-    const provider = new VeoVideoProvider(config, client);
-    await provider.generate(await req());
-    await expect(provider.getResult(OP)).rejects.toThrow(/OUTPUT_GCS_URI is not supported/);
+    const err = await new VeoVideoProvider(config, client).getResult(OP, await req()).catch((e) => e);
+    expect(err).toBeInstanceOf(VideoProviderError);
+    expect(err).toMatchObject({ retryable: false, code: "GCS_OUTPUT_UNSUPPORTED" });
+    expect(err.message).toMatch(/OUTPUT_GCS_URI is not supported/);
+  });
+
+  it.each([
+    [429, true],
+    [400, false],
+  ])("wraps a submit error %i into VideoProviderError (retryable=%s)", async (status, retryable) => {
+    const client: VeoClient = {
+      async generateVideos() {
+        throw Object.assign(new Error("nope"), { status });
+      },
+      async getVideosOperation() {
+        return { done: false };
+      },
+    };
+    const err = await new VeoVideoProvider(config, client).generate(await req()).catch((e) => e);
+    expect(err).toBeInstanceOf(VideoProviderError);
+    expect(err.retryable).toBe(retryable);
   });
 
   it("limits concurrent submits to maxConcurrency", async () => {

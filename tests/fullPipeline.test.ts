@@ -59,7 +59,7 @@ describe("full pipeline with the mock provider", () => {
     const tooShort: VideoProvider = {
       generate: (req) => inner.generate({ ...req, durationSeconds: 1 }),
       getStatus: (id) => inner.getStatus(id),
-      getResult: (id) => inner.getResult(id),
+      getResult: (id, target) => inner.getResult(id, target),
     };
     const job = await run(tooShort);
     expect(job.state).toBe("FAILED");
