@@ -97,6 +97,20 @@ The rest (storyboard normalization of bad LLM output, the prompt builder, the ma
 - `gemini-2.5-flash` is closed to new API-key users (404).
 - Flow has no negative-prompt field, so the negative terms are folded into the pasted prompt.
 
+## Blockers we hit and how we handled them
+
+- **No practical video API access.** Veo through Vertex AI needs a billed Google Cloud project. We built and unit-tested the Veo provider, but produced the submitted video through Google Flow with the `manual` provider (prompt export, clip import, validation). The Veo path is not verified live.
+- **Gemini model retired for new keys.** `gemini-2.5-flash` returns 404 for new AI Studio users. The default is now `gemini-3.8-flash`, and a 404 prints a clear message to set `GEMINI_MODEL`.
+- **Gemini 503 "high demand" failed a run.** The LLM client now retries transient errors (429/503/network) with backoff, separate from the JSON repair retry.
+- **Prompt bug found on the first real run.** Gemini's fields already ended in periods, giving `queue..` and `expression.,` in the prompts. Fixed in the prompt builder with a regression test.
+- **Flow has no negative-prompt field.** Each shot's `.prompt.md` folds the negatives into one paste-ready block ending "Avoid: ... No on-screen text."
+- **Video models cannot render legible UI text.** The notification card and the end card are composited with ffmpeg after generation.
+- **Flow clips vary in length and may have no audio.** The assembler trims to the storyboard duration, uses shorter clips as-is, and adds silence where audio is missing.
+
+## What we did
+
+Built as seven test-first slices: plan-only strategy and storyboard, mock end-to-end pipeline, reliability (retries, resume, status, Ctrl-C), Veo provider, creative QA with Gemini vision, the free path (AI Studio key and manual Flow import), and overlay plus `--redo`/`--reassemble` tooling. Then one real run end to end: Gemini planned the ad, the three shots were made in Flow, and the pipeline assembled and QA-checked the final video in `submission/`.
+
 ## Not implemented
 
 - No web UI or HTTP API.
