@@ -47,3 +47,27 @@ describe("buildPrompts", () => {
     expect(out.shots.map((s) => s.duration)).toEqual([4, 4, 4]);
   });
 });
+
+describe("buildVeoPrompt punctuation", () => {
+  it("never doubles punctuation when fields already end with a period", () => {
+    const scene = {
+      ...sb.scenes[0]!,
+      camera: "Smooth eye-level vertical tracking shot moving backwards ahead of the man as he walks briskly past the frozen queue.",
+      description: "He glances at his watch and keeps walking.",
+    };
+    const style = {
+      ...sb.style_guide,
+      character: "a man in his late thirties with short dark hair and a calm, composed expression.",
+      wardrobe: "Charcoal grey merino wool crewneck sweater, dark trousers.",
+      setting: "a frozen city street at dawn.",
+      lighting: "cold blue light.",
+    };
+    const { prompt } = buildVeoPrompt(scene, style);
+    expect(prompt).not.toMatch(/\.\./);
+    expect(prompt).not.toMatch(/\.,/);
+    expect(prompt).not.toMatch(/\.\s+\./);
+    expect(prompt).toContain("wearing charcoal grey merino wool crewneck sweater, dark trousers.");
+    expect(prompt).toContain("calm, composed expression, wearing");
+    expect(prompt.startsWith("Smooth eye-level vertical tracking shot")).toBe(true);
+  });
+});

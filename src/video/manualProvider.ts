@@ -69,6 +69,13 @@ export class ManualImportProvider implements VideoProvider {
   }
 }
 
+/** Prompt + a final "Avoid:" sentence, as one paste-ready paragraph. */
+export function pasteBlock(req: Pick<GenerateRequest, "prompt" | "negativePrompt">): string {
+  const prompt = req.prompt.trim();
+  const avoid = req.negativePrompt.trim().replace(/[\s.,;]+$/, "");
+  return `${prompt}${/[.!?]$/.test(prompt) ? "" : "."} Avoid: ${avoid}. No on-screen text.`;
+}
+
 function promptFile(req: GenerateRequest): string {
   return `# Shot ${req.sceneId}
 
@@ -77,13 +84,13 @@ function promptFile(req: GenerateRequest): string {
 - Model: Veo 3.1 in Flow. Pick the closest length >= ${req.durationSeconds}s; it gets trimmed to the shot duration.
 - Save the result as \`${req.sceneId}.mp4\` in this folder.
 
-## Prompt
+## Paste into Flow
 
-${req.prompt}
+Flow has no negative-prompt field, so the negative terms are folded into one block. Copy everything below:
 
-## Negative prompt
-
-${req.negativePrompt}
+\`\`\`
+${pasteBlock(req)}
+\`\`\`
 `;
 }
 
@@ -99,7 +106,7 @@ This run uses the manual provider: you make each shot by hand in Google Flow, th
 ## Steps
 
 1. Open https://labs.google/flow and create a new project.
-2. For each shot below, open its \`<sceneId>.prompt.md\` file and paste the prompt (and the negative prompt if Flow offers a field for it).
+2. For each shot below, open its \`<sceneId>.prompt.md\` file and paste the prompt (it already ends with the "Avoid: ..." sentence, because Flow has no negative-prompt field).
 3. Choose Veo 3.1, portrait / 9:16, and the closest length that is at least the shot duration (longer clips are trimmed automatically; a shorter clip is used as-is).
 4. Download each result as MP4 and save it in THIS folder with the exact file name:
 

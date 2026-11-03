@@ -36,6 +36,12 @@ export interface PromptsArtifact {
   shots: ShotPrompt[];
 }
 
+/** Strips trailing whitespace and sentence punctuation so fields can be joined with our own. */
+const tidy = (text: string): string => text.trim().replace(/[\s.,;:!]+$/, "");
+
+/** "Charcoal grey ..." -> "charcoal grey ..."; leaves acronyms ("TV") and proper-looking words alone. */
+const lowerFirst = (text: string): string => (/^[A-Z][a-z]/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text);
+
 /**
  * Pure: scene + style guide -> Veo 3.1 prompt. Leads with the shot/camera, repeats the
  * full character + wardrobe verbatim in every prompt so clips stay consistent.
@@ -46,19 +52,23 @@ export function buildVeoPrompt(
   style: StyleGuide,
   aspect: typeof ASPECT_RATIO = ASPECT_RATIO,
 ): VeoPrompt {
-  const lighting = style.lighting ? ` Lighting: ${style.lighting}.` : "";
+  const lighting = style.lighting ? ` Lighting: ${tidy(style.lighting)}.` : "";
   const audio = scene.dialogue_or_sfx
-    ? `Audio: ${scene.dialogue_or_sfx}.`
+    ? `Audio: ${tidy(scene.dialogue_or_sfx)}.`
     : "Audio: subtle natural ambient sound, no music lyrics, no spoken words.";
   const prompt = [
-    `${scene.camera}.`,
-    `Subject: ${style.character}, wearing ${style.wardrobe}.`,
-    `Action: ${scene.description}`,
-    `Setting: ${style.setting}.${lighting}`,
-    `Color palette: ${style.palette}. Color grade: ${style.grade}. Lens: ${style.lens}.`,
+    `${tidy(scene.camera)}.`,
+    `Subject: ${tidy(style.character)}, wearing ${lowerFirst(tidy(style.wardrobe))}.`,
+    `Action: ${tidy(scene.description)}.`,
+    `Setting: ${tidy(style.setting)}.${lighting}`,
+    `Color palette: ${tidy(style.palette)}. Color grade: ${tidy(style.grade)}. Lens: ${tidy(style.lens)}.`,
     `Photorealistic, cinematic, vertical ${aspect} framing.`,
     audio,
-  ].join(" ");
+  ]
+    .join(" ")
+    // Safety net: model-written fields can still smuggle in doubled punctuation internally.
+    .replace(/\.(\s*\.)+/g, ".")
+    .replace(/\.\s*,/g, ",");
   return { prompt, negative_prompt: NEGATIVE_PROMPT };
 }
 

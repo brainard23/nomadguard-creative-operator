@@ -10,7 +10,7 @@ import { FakeLlmClient } from "../src/llm/fakeClient.ts";
 import { probeClip } from "../src/media/probe.ts";
 import { resumePipeline, runPipeline } from "../src/pipeline/pipeline.ts";
 import { technicalQa } from "../src/qa/technical.ts";
-import { ManualImportProvider } from "../src/video/manualProvider.ts";
+import { ManualImportProvider, pasteBlock } from "../src/video/manualProvider.ts";
 import { makeClip } from "./support.ts";
 
 let dir: string;
@@ -56,7 +56,7 @@ describe("manual provider flow", () => {
     expect(prompt).toMatch(/Duration: 4s/);
     expect(prompt).toMatch(/9:16/);
     expect(prompt).toMatch(/Veo 3\.1 in Flow/);
-    expect(prompt).toMatch(/Negative prompt/);
+    expect(prompt).toMatch(/Avoid: text, captions.*\. No on-screen text\./);
     const readme = await readFile(join(inbox, "README.md"), "utf8");
     for (const id of ["s1", "s2", "s3"]) expect(readme).toContain(`${id}.mp4`);
 
@@ -102,6 +102,13 @@ describe("manual provider flow", () => {
     await drop(job.runId, "s2", "6s-silent.mp4");
     const fixed = await resume(job.runId);
     expect(fixed.state).toBe("FINALIZED");
+  });
+});
+
+describe("pasteBlock", () => {
+  it("folds the negative terms into one trailing Avoid sentence", () => {
+    expect(pasteBlock({ prompt: "A shot.", negativePrompt: "text, blurry" })).toBe("A shot. Avoid: text, blurry. No on-screen text.");
+    expect(pasteBlock({ prompt: "A shot", negativePrompt: "text." })).toBe("A shot. Avoid: text. No on-screen text.");
   });
 });
 
