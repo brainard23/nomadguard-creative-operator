@@ -1,59 +1,49 @@
-import type { Brief } from "../brief/schema.ts";
 import { buildPrompts } from "../creative/promptBuilder.ts";
 import { developStrategy } from "../creative/strategist.ts";
 import { writeStoryboard } from "../creative/storyboardWriter.ts";
-import type { JobStore } from "../jobs/jobStore.ts";
-import type { Job, JobError } from "../jobs/types.ts";
-import { LlmOutputError, type LlmClient } from "../llm/types.ts";
+import { LlmOutputError } from "../llm/types.ts";
+import { StageError, type PipelineContext, type Stage } from "./types.ts";
 
-export interface PlanningDeps {
-  store: JobStore;
-  llm: LlmClient;
-  brief: Brief;
-}
+/** Planning: brief, strategy, storyboard, prompts. Each artifact is written before the next step. */
+export const planningStage: Stage = {
+  name: "planning",
+  state: "PLANNING",
+  doneState: "PLANNED",
+  async run({ store, runId, brief, llm }: PipelineContext) {
+    const step = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err) {
+        if (err instanceof StageError) throw err;
+        const details =
+          err instanceof LlmOutputError
+            ? { task: err.task, issues: err.issues, rawOutput: err.rawOutput }
+            : { type: (err as Error)?.name, ...(codeOf(err) ? { code: codeOf(err) } : {}) };
+        throw new StageError(name, err instanceof Error ? err.message : String(err), details, { cause: err });
+      }
+    };
 
-type Stage = "brief" | "strategy" | "storyboard" | "prompts";
+    await step("brief", () => store.writeArtifact(runId, "brief", brief));
 
-/**
- * Planning stage: CREATED -> PLANNING -> PLANNED. Each artifact is written before the
- * state advances. Any error is persisted as FAILED (stage + message + details) and the
- * failed job is returned; this function does not throw for stage errors.
- */
-export async function runPlanning({ store, llm, brief }: PlanningDeps): Promise<Job> {
-  const created = await store.create();
-  const { runId } = created;
-  let stage: Stage = "brief";
-  try {
-    await store.writeArtifact(runId, "brief", brief);
-    await store.update(runId, { state: "PLANNING" });
-
-    stage = "strategy";
-    const strategy = await developStrategy(llm, brief);
-    await store.writeArtifact(runId, "strategy", strategy);
-
-    stage = "storyboard";
-    const angle = strategy.angles.find((a) => a.name === strategy.selection.selected_angle);
-    if (!angle) throw new Error(`Selected angle "${strategy.selection.selected_angle}" not found.`);
-    const { storyboard, adjustments } = await writeStoryboard(llm, brief, angle);
-    await store.writeArtifact(runId, "storyboard", storyboard);
-
-    stage = "prompts";
-    await store.writeArtifact(runId, "prompts", buildPrompts(storyboard));
-
-    return await store.update(runId, {
-      state: "PLANNED",
-      notes: adjustments.map((a) => `storyboard normalized: ${a}`),
+    const strategy = await step("strategy", async () => {
+      const s = await developStrategy(llm, brief);
+      await store.writeArtifact(runId, "strategy", s);
+      return s;
     });
-  } catch (err) {
-    return store.update(runId, { state: "FAILED", error: toJobError(stage, err) });
-  }
-}
 
-function toJobError(stage: string, err: unknown): JobError {
-  const message = err instanceof Error ? err.message : String(err);
-  if (err instanceof LlmOutputError) {
-    return { stage, message, details: { task: err.task, issues: err.issues, rawOutput: err.rawOutput } };
-  }
-  const code = (err as { code?: unknown } | null)?.code;
-  return { stage, message, details: { type: (err as Error)?.name, ...(code ? { code } : {}) } };
+    const { storyboard, adjustments } = await step("storyboard", async () => {
+      const angle = strategy.angles.find((a) => a.name === strategy.selection.selected_angle);
+      if (!angle) throw new Error(`Selected angle "${strategy.selection.selected_angle}" not found.`);
+      const result = await writeStoryboard(llm, brief, angle);
+      await store.writeArtifact(runId, "storyboard", result.storyboard);
+      return result;
+    });
+
+    await step("prompts", () => store.writeArtifact(runId, "prompts", buildPrompts(storyboard)));
+    await store.update(runId, { notes: adjustments.map((a) => `storyboard normalized: ${a}`) });
+  },
+};
+
+function codeOf(err: unknown): unknown {
+  return (err as { code?: unknown } | null)?.code;
 }

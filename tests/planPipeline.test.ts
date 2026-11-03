@@ -6,7 +6,7 @@ import { loadBrief } from "../src/brief/load.ts";
 import { FakeLlmClient } from "../src/llm/fakeClient.ts";
 import { DEFAULT_FIXTURES } from "../src/llm/fixtures.ts";
 import { JobStore, newRunId } from "../src/jobs/jobStore.ts";
-import { runPlanning } from "../src/pipeline/planning.ts";
+import { runPipeline } from "../src/pipeline/pipeline.ts";
 
 let dir: string;
 beforeEach(async () => {
@@ -22,7 +22,7 @@ describe("runPlanning", () => {
   it("takes a run from CREATED to PLANNED with all four artifacts", async () => {
     const store = new JobStore(dir);
     const brief = await loadBrief();
-    const job = await runPlanning({ store, llm: new FakeLlmClient(), brief });
+    const job = await runPipeline({ store, llm: new FakeLlmClient(), brief });
 
     expect(job.state).toBe("PLANNED");
     expect(job.error).toBeUndefined();
@@ -51,7 +51,7 @@ describe("runPlanning", () => {
     fixtures.storyboard.scenes[0].duration = 8;
     fixtures.storyboard.scenes[1].duration = 8;
     fixtures.storyboard.scenes[2].duration = 8;
-    const job = await runPlanning({
+    const job = await runPipeline({
       store,
       llm: new FakeLlmClient({ fixtures }),
       brief: await loadBrief(),
@@ -65,7 +65,7 @@ describe("runPlanning", () => {
   it("ends FAILED with the stage and message when the strategist fails", async () => {
     const store = new JobStore(dir);
     const llm = new FakeLlmClient({ failTasks: { strategy: new Error("vertex exploded") } });
-    const job = await runPlanning({ store, llm, brief: await loadBrief() });
+    const job = await runPipeline({ store, llm, brief: await loadBrief() });
 
     expect(job.state).toBe("FAILED");
     expect(job.error?.stage).toBe("strategy");
@@ -82,7 +82,7 @@ describe("runPlanning", () => {
     const store = new JobStore(dir);
     const fixtures = structuredClone(DEFAULT_FIXTURES) as any;
     fixtures.storyboard.scenes[0].purpose = "problem"; // no hook
-    const job = await runPlanning({
+    const job = await runPipeline({
       store,
       llm: new FakeLlmClient({ fixtures }),
       brief: await loadBrief(),

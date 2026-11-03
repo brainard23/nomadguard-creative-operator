@@ -1,15 +1,22 @@
+import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { BriefError, DEFAULT_BRIEF_PATH, loadBrief } from "./brief/load.ts";
 import { ConfigError } from "./config.ts";
 import { JobStore } from "./jobs/jobStore.ts";
 import { createLlmClient, type LlmKind } from "./llm/index.ts";
-import { runPlanning } from "./pipeline/planning.ts";
+import { MediaError } from "./media/exec.ts";
+import { runPipeline } from "./pipeline/pipeline.ts";
+import { createVideoProvider, type ProviderKind } from "./video/index.ts";
+
+// Loaded here (not via a node flag) so a missing .env is silent.
+if (existsSync(".env")) process.loadEnvFile(".env");
 
 const USAGE = `Usage:
-  pnpm start run --plan-only [--brief <path>] [--llm fake|vertex]
+  pnpm start run [--plan-only] [--provider mock|veo] [--brief <path>] [--llm fake|vertex]
 
 Options:
   --plan-only   Stop after strategy, storyboard and prompts (no video generation)
+  --provider    Video provider: mock (default, offline) or veo (arrives in S4)
   --brief       Path to the brief JSON (default: ${DEFAULT_BRIEF_PATH})
   --llm         LLM client: vertex (default) or fake (offline fixtures)`;
 
@@ -21,6 +28,7 @@ async function main(argv: string[]): Promise<number> {
       "plan-only": { type: "boolean", default: false },
       brief: { type: "string", default: DEFAULT_BRIEF_PATH },
       llm: { type: "string", default: "vertex" },
+      provider: { type: "string", default: "mock" },
     },
   });
 
@@ -32,21 +40,23 @@ async function main(argv: string[]): Promise<number> {
     console.error(`Unknown --llm "${values.llm}" (expected fake or vertex).\n\n${USAGE}`);
     return 2;
   }
-  if (!values["plan-only"]) {
-    console.error("Full video generation arrives in S2. Run with --plan-only for now.");
+  if (values.provider !== "mock" && values.provider !== "veo") {
+    console.error(`Unknown --provider "${values.provider}" (expected mock or veo).\n\n${USAGE}`);
     return 2;
   }
 
   const brief = await loadBrief(values.brief);
   const llm = createLlmClient(values.llm as LlmKind);
+  const provider = values["plan-only"] ? undefined : createVideoProvider(values.provider as ProviderKind);
   const store = new JobStore();
-  const job = await runPlanning({ store, llm, brief });
+  const job = await runPipeline({ store, llm, brief, provider });
 
   console.log(`Run:   ${job.runId}`);
   console.log(`State: ${job.state}`);
   for (const [name, rel] of Object.entries(job.artifacts)) {
     console.log(`  ${name.padEnd(10)} ${store.runDir(job.runId)}/${rel}`);
   }
+  for (const shot of job.shots) console.log(`  shot ${shot.sceneId.padEnd(5)} ${shot.state}`);
   console.log(`  ${"job".padEnd(10)} ${store.runDir(job.runId)}/job.json`);
   for (const note of job.notes) console.log(`  note: ${note}`);
 
@@ -63,7 +73,7 @@ main(process.argv.slice(2)).then(
     process.exitCode = code;
   },
   (err: unknown) => {
-    if (err instanceof BriefError || err instanceof ConfigError) {
+    if (err instanceof BriefError || err instanceof ConfigError || err instanceof MediaError) {
       console.error(`Error: ${err.message}`);
     } else if (process.env.DEBUG) {
       console.error(err);
