@@ -46,7 +46,7 @@ describe("full pipeline with the mock provider", () => {
 
   it("fails the run at the generation stage, naming the shot, on a provider failure", async () => {
     const job = await run(
-      new MockVideoProvider({ failures: { s2: { message: "blocked by safety filter", retryable: false, code: "SAFETY" } } }),
+      new MockVideoProvider({ failures: { s2: [{ message: "blocked by safety filter", retryable: false, code: "SAFETY" }] } }),
     );
     expect(job.state).toBe("FAILED");
     expect(job.error?.stage).toBe("generation");
@@ -59,7 +59,7 @@ describe("full pipeline with the mock provider", () => {
     const tooShort: VideoProvider = {
       generate: (req) => inner.generate({ ...req, durationSeconds: 1 }),
       getStatus: (id) => inner.getStatus(id),
-      getResult: (id) => inner.getResult(id),
+      getResult: (id, t) => inner.getResult(id, t),
     };
     const job = await run(tooShort);
     expect(job.state).toBe("FAILED");

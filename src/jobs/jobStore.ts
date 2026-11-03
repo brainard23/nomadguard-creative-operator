@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   ARTIFACT_FILES,
@@ -54,6 +54,26 @@ export class JobStore {
   async get(runId: string): Promise<Job> {
     const raw = await readFile(join(this.runDir(runId), "job.json"), "utf8");
     return JobSchema.parse(JSON.parse(raw));
+  }
+
+  /** Most recent runs first (run ids sort by creation time). Unreadable run folders are skipped. */
+  async list(limit = 10): Promise<Job[]> {
+    let names: string[];
+    try {
+      names = await readdir(this.rootDir);
+    } catch {
+      return [];
+    }
+    const jobs: Job[] = [];
+    for (const name of names.sort().reverse()) {
+      if (jobs.length >= limit) break;
+      try {
+        jobs.push(await this.get(name));
+      } catch {
+        // not a run folder
+      }
+    }
+    return jobs;
   }
 
   update(runId: string, patch: JobPatch): Promise<Job> {

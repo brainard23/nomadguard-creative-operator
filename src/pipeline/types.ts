@@ -2,6 +2,7 @@ import type { Brief } from "../brief/schema.ts";
 import type { JobStore } from "../jobs/jobStore.ts";
 import type { JobState } from "../jobs/types.ts";
 import type { LlmClient } from "../llm/types.ts";
+import type { BackoffPolicy } from "../util/retry.ts";
 import type { VideoProvider } from "../video/types.ts";
 
 export interface PipelineContext {
@@ -13,6 +14,10 @@ export interface PipelineContext {
   provider?: VideoProvider;
   pollIntervalMs: number;
   pollTimeoutMs: number;
+  /** Backoff / max attempts for provider calls and shot resubmission. */
+  retry?: Partial<BackoffPolicy>;
+  /** Aborted on SIGINT: stages stop at the next safe point and the job keeps its state. */
+  signal?: AbortSignal;
 }
 
 /** A pipeline stage: `state` is set while it runs, `doneState` (optional) once it completes. */
@@ -20,6 +25,10 @@ export interface Stage {
   name: string;
   state: JobState;
   doneState?: JobState;
+  /** Extra stage names (as recorded in job.error.stage) that belong to this stage. */
+  aliases?: string[];
+  /** True when this stage's output is already present, so resume can skip it. */
+  isComplete?(ctx: PipelineContext): Promise<boolean>;
   run(ctx: PipelineContext): Promise<void>;
 }
 
@@ -33,5 +42,13 @@ export class StageError extends Error {
     options?: { cause?: unknown },
   ) {
     super(message, options);
+  }
+}
+
+/** Thrown when the run is aborted (SIGINT). The job keeps its state so `resume` can continue. */
+export class InterruptedError extends Error {
+  override name = "InterruptedError";
+  constructor(message = "Run interrupted") {
+    super(message);
   }
 }

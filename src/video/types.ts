@@ -26,6 +26,26 @@ export interface VideoJobStatus {
 export interface VideoProvider {
   generate(req: GenerateRequest): Promise<{ providerJobId: string }>;
   getStatus(providerJobId: string): Promise<VideoJobStatus>;
-  /** Only valid once status is "succeeded". */
-  getResult(providerJobId: string): Promise<{ clipPath: string }>;
+  /**
+   * Only valid once status is "succeeded". Stateless: the caller says where the clip belongs,
+   * so it works after a restart without any provider memory.
+   */
+  getResult(providerJobId: string, target: ResultTarget): Promise<{ clipPath: string }>;
+}
+
+export interface ResultTarget {
+  sceneId: string;
+  outputDir: string;
+}
+
+/** Thrown by providers; `retryable` marks transient failures (rate limit, 5xx, timeout). */
+export class VideoProviderError extends Error {
+  override name = "VideoProviderError";
+  code?: string;
+  retryable: boolean;
+  constructor(message: string, options: { retryable: boolean; code?: string; cause?: unknown }) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.retryable = options.retryable;
+    this.code = options.code;
+  }
 }
