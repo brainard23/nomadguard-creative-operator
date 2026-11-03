@@ -11,7 +11,9 @@ Brand and brief: fictional NomadGuard travel protection ([`briefs/`](briefs/)).
 
 ## Final video
 
-[`submission/final.mp4`](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/final.mp4) is the submitted advertisement: 14s, 1080x1920 (9:16), H.264 + AAC. Clips were made with Veo 3.1 in Google Flow, then assembled and checked by this pipeline (technical QA valid; creative QA scores in [`submission/qa.json`](submission/qa.json): realism 9, consistency 8, brief adherence 9, hook 8, ad quality 9). The raw Flow clips are in [`submission/clips/`](submission/clips/) ([s1](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/clips/s1.mp4), [s2](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/clips/s2.mp4), [s3](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/clips/s3.mp4)). See "Providers" for why the clips are made by hand.
+[`submission/final.mp4`](submission/final.mp4) is the submitted advertisement: 14s, 1080x1920 (9:16), H.264 + AAC. Clips were made with Veo 3.1 in Google Flow, then assembled and checked by this pipeline (technical QA valid; creative QA scores in [`submission/qa.json`](submission/qa.json): realism 9, consistency 8, brief adherence 9, hook 8, ad quality 9). The raw Flow clips are in [`submission/clips/`](submission/clips/) ([s1](submission/clips/s1.mp4), [s2](submission/clips/s2.mp4), [s3](submission/clips/s3.mp4)). See "Providers" for why the clips are made by hand.
+
+How QA shaped this video: the first assembly scored an average of **5.0** and went to `NEEDS_REVIEW`. The judge named s2 as the weakest scene because the watch screen never showed the payout, so the product moment was missing. Two retries in Flow to render the watch UI broke the anatomy and the character's skin tone. The fix was a notification card composited in post (`storyboard.json` → `overlay`), plus a QA bug fix so the end card (brand + CTA) is sampled. The re-run scored **8.6** and `FINALIZED`. Caveat: by then the free daily quota for `gemini-3.8-flash` was used up (20 requests per day per model), so the final score comes from `gemini-3.5-flash` (`GEMINI_MODEL=gemini-3.5-flash`). Part of the jump may be a more lenient judge.
 
 ## Setup
 
@@ -67,7 +69,7 @@ LLM: Gemini (`gemini-3.8-flash`, `GEMINI_MODEL` overrides) through `@google/gena
 - Transient provider errors retry with exponential backoff; permanent ones (safety filter, corrupt file) fail only that shot with a message naming it.
 - Ctrl-C saves state; any unexpected error is persisted as `FAILED` with the stage and message.
 - **Technical QA**: exists, decodes cleanly, duration 10-15s, 1080x1920, 9:16.
-- **Creative QA**: 6 frames (one in the hook window, one in the last scene) go to Gemini vision with the brief, angle and storyboard. It scores realism, visual consistency, brief adherence, hook strength and advertising quality (1-10, with notes) and names the weakest scene. Pass = average >= 7 and no score < 5 (`CREATIVE_QA_MIN_AVG`, `CREATIVE_QA_MIN_SCORE`), else `NEEDS_REVIEW` with reasons. If the vision call itself fails the run goes to `NEEDS_REVIEW`, never silently `FINALIZED`.
+- **Creative QA**: 6 frames (five spread from the hook window to the last scene, plus one from the end card) go to Gemini vision with the brief, angle and storyboard. It scores realism, visual consistency, brief adherence, hook strength and advertising quality (1-10, with notes) and names the weakest scene. Pass = average >= 7 and no score < 5 (`CREATIVE_QA_MIN_AVG`, `CREATIVE_QA_MIN_SCORE`), else `NEEDS_REVIEW` with reasons. If the vision call itself fails the run goes to `NEEDS_REVIEW`, never silently `FINALIZED`.
 
 ## Key decisions and trade-offs
 
@@ -80,12 +82,20 @@ LLM: Gemini (`gemini-3.8-flash`, `GEMINI_MODEL` overrides) through `@google/gena
 
 ## Tests
 
-`pnpm test` runs 160+ tests, all offline (real ffmpeg, no network). The highest-risk ones:
+`pnpm test` runs all tests offline (real ffmpeg, no network). The three that cover the highest risk:
 
-- `tests/resilience.test.ts` retries, resume without resubmitting, failure isolation per shot.
-- `tests/manualProvider.test.ts` the full pause / drop clips / resume flow, garbage clip handling, clips of different length or without audio.
-- `tests/creativeQaPipeline.test.ts` FINALIZED vs NEEDS_REVIEW routing and invalid vision JSON.
-- `tests/technicalQa.test.ts`, `tests/normalizeStoryboard.test.ts`, `tests/promptBuilder.test.ts`.
+1. `tests/resilience.test.ts`: a transient failure is retried, a permanent one fails only its shot with a reason, and resume after a crash re-polls submitted jobs instead of paying for them twice.
+2. `tests/technicalQa.test.ts`: real ffmpeg-made clips. A good 9:16 clip passes, and wrong aspect, wrong duration, missing and corrupt files fail with explicit reasons.
+3. `tests/creativeQaPipeline.test.ts`: low scores or a failed vision call route to `NEEDS_REVIEW`, never a silent `FINALIZED`.
+
+The rest (storyboard normalization of bad LLM output, the prompt builder, the manual pause/resume flow, overlay rendering) are supporting tests.
+
+## Free-tier notes from the real run
+
+- `gemini-3.8-flash` on the free tier is slow and often overloaded. One planning call took 16 minutes and the storyboard call hit five 503s before it succeeded. That is why the LLM client retries transient errors.
+- The free tier allows 20 requests per day per model, and `gemini-3.7-flash` shares the `3.8` quota. When it runs out, set `GEMINI_MODEL` to another model.
+- `gemini-2.5-flash` is closed to new API-key users (404).
+- Flow has no negative-prompt field, so the negative terms are folded into the pasted prompt.
 
 ## Not implemented
 
