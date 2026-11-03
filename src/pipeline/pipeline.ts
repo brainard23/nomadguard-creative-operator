@@ -18,6 +18,7 @@ export interface PipelineOptions {
   provider?: VideoProvider;
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
+  skipCreativeQa?: boolean;
 }
 
 export function stagesFor(planOnly: boolean): Stage[] {
@@ -37,6 +38,7 @@ export async function runPipeline(options: PipelineOptions): Promise<Job> {
     provider: options.provider,
     pollIntervalMs: options.pollIntervalMs ?? 2000,
     pollTimeoutMs: options.pollTimeoutMs ?? 15 * 60_000,
+    skipCreativeQa: options.skipCreativeQa,
   };
   return runStages(ctx, stagesFor(planOnly));
 }

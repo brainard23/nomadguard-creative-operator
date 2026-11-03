@@ -13,6 +13,8 @@ export interface PipelineContext {
   provider?: VideoProvider;
   pollIntervalMs: number;
   pollTimeoutMs: number;
+  /** Skip creative (vision) QA; technical QA still runs. */
+  skipCreativeQa?: boolean;
 }
 
 /** A pipeline stage: `state` is set while it runs, `doneState` (optional) once it completes. */

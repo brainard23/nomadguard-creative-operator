@@ -12,13 +12,14 @@ import { createVideoProvider, type ProviderKind } from "./video/index.ts";
 if (existsSync(".env")) process.loadEnvFile(".env");
 
 const USAGE = `Usage:
-  pnpm start run [--plan-only] [--provider mock|veo] [--brief <path>] [--llm fake|vertex]
+  pnpm start run [--plan-only] [--provider mock|veo] [--brief <path>] [--llm fake|vertex] [--skip-creative-qa]
 
 Options:
   --plan-only   Stop after strategy, storyboard and prompts (no video generation)
   --provider    Video provider: mock (default, offline) or veo (arrives in S4)
   --brief       Path to the brief JSON (default: ${DEFAULT_BRIEF_PATH})
-  --llm         LLM client: vertex (default) or fake (offline fixtures)`;
+  --llm         LLM client: vertex (default) or fake (offline fixtures)
+  --skip-creative-qa  Skip the Gemini vision review of sampled frames (technical QA still runs)`;
 
 async function main(argv: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
@@ -29,6 +30,7 @@ async function main(argv: string[]): Promise<number> {
       brief: { type: "string", default: DEFAULT_BRIEF_PATH },
       llm: { type: "string", default: "vertex" },
       provider: { type: "string", default: "mock" },
+      "skip-creative-qa": { type: "boolean", default: false },
     },
   });
 
@@ -48,8 +50,9 @@ async function main(argv: string[]): Promise<number> {
   const brief = await loadBrief(values.brief);
   const llm = createLlmClient(values.llm as LlmKind);
   const provider = values["plan-only"] ? undefined : createVideoProvider(values.provider as ProviderKind);
+  if (values["skip-creative-qa"]) console.log("Creative QA skipped (--skip-creative-qa).");
   const store = new JobStore();
-  const job = await runPipeline({ store, llm, brief, provider });
+  const job = await runPipeline({ store, llm, brief, provider, skipCreativeQa: values["skip-creative-qa"] });
 
   console.log(`Run:   ${job.runId}`);
   console.log(`State: ${job.state}`);

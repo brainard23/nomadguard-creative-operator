@@ -12,7 +12,7 @@ export interface FakeLlmOptions {
 
 /** Offline LlmClient for tests and `--llm fake`. Records every call in `calls`. */
 export class FakeLlmClient extends BaseLlmClient {
-  readonly calls: { task: string; prompt: string }[] = [];
+  readonly calls: { task: string; prompt: string; images: number }[] = [];
   private readonly fixtures: Record<string, unknown>;
   private readonly invalid: Record<string, string[]>;
   private readonly failTasks: Record<string, Error>;
@@ -26,9 +26,9 @@ export class FakeLlmClient extends BaseLlmClient {
     this.failTasks = options.failTasks ?? {};
   }
 
-  protected override async complete({ prompt, opts }: CompleteRequest): Promise<string> {
+  protected override async complete({ prompt, opts, images }: CompleteRequest): Promise<string> {
     const task = opts.task ?? "default";
-    this.calls.push({ task, prompt });
+    this.calls.push({ task, prompt, images: images?.length ?? 0 });
     const failure = this.failTasks[task];
     if (failure) throw failure;
     const queued = this.invalid[task]?.shift();

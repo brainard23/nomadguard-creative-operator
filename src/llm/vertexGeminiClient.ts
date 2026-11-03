@@ -17,10 +17,20 @@ export class VertexGeminiClient extends BaseLlmClient {
     this.model = config.geminiModel;
   }
 
-  protected override async complete({ prompt, opts, jsonSchema }: CompleteRequest): Promise<string> {
+  protected override async complete({ prompt, opts, jsonSchema, images }: CompleteRequest): Promise<string> {
     const response = await this.ai.models.generateContent({
       model: this.model,
-      contents: prompt,
+      contents: images?.length
+        ? [
+            {
+              role: "user",
+              parts: [
+                ...images.map((i) => ({ inlineData: { data: Buffer.from(i.data).toString("base64"), mimeType: i.mimeType } })),
+                { text: prompt },
+              ],
+            },
+          ]
+        : prompt,
       config: {
         systemInstruction: opts.systemInstruction,
         temperature: opts.temperature,
