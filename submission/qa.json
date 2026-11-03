@@ -1,0 +1,78 @@
+{
+  "technical": {
+    "exists": true,
+    "playable": true,
+    "duration": 14,
+    "width": 1080,
+    "height": 1920,
+    "aspect_ratio": "9:16",
+    "codec": "h264",
+    "valid": true,
+    "reasons": []
+  },
+  "creative": {
+    "scores": {
+      "realism": {
+        "score": 9,
+        "note": "Exceptional photorealism across all scenes with remarkably clean hands, faces, and environment rendering."
+      },
+      "visual_consistency": {
+        "score": 8,
+        "note": "Character identity, outfit, and grading stay consistent throughout, though the suitcase handle morphs from black to silver in scene 3."
+      },
+      "brief_adherence": {
+        "score": 9,
+        "note": "Hits the premium brief perfectly by demonstrating immediate automated delay payouts for frequent travelers."
+      },
+      "hook_strength": {
+        "score": 8,
+        "note": "Opening frame establishes a calm traveler walking past congested airport lines, quickly hooking the target demographic."
+      },
+      "advertising_quality": {
+        "score": 9,
+        "note": "Clear narrative arc, sharp on-screen notification overlays, and an authoritative branded end card deliver high conversion potential."
+      }
+    },
+    "weakest_scene_id": "s3",
+    "issues": [
+      "In scene 3, the suitcase handle poles morph from black to silver metal."
+    ],
+    "verdict_summary": "This is a polished, high-performing social ad that executes the narrative contrast and product benefit flawlessly. Minor prop drift on the suitcase in the final scene is negligible and does not hinder campaign performance.",
+    "frames": [
+      {
+        "t": 0.75,
+        "scene_id": "s1",
+        "path": "runs/20261103-013249-2f6cd4/qa-frames/frame-01.jpg"
+      },
+      {
+        "t": 3.063,
+        "scene_id": "s1",
+        "path": "runs/20261103-013249-2f6cd4/qa-frames/frame-02.jpg"
+      },
+      {
+        "t": 5.375,
+        "scene_id": "s2",
+        "path": "runs/20261103-013249-2f6cd4/qa-frames/frame-03.jpg"
+      },
+      {
+        "t": 7.688,
+        "scene_id": "s2",
+        "path": "runs/20261103-013249-2f6cd4/qa-frames/frame-04.jpg"
+      },
+      {
+        "t": 10,
+        "scene_id": "s3",
+        "path": "runs/20261103-013249-2f6cd4/qa-frames/frame-05.jpg"
+      },
+      {
+        "t": 13,
+        "scene_id": "end_card",
+        "path": "runs/20261103-013249-2f6cd4/qa-frames/frame-06.jpg"
+      }
+    ],
+    "decision": {
+      "pass": true,
+      "reasons": []
+    }
+  }
+}

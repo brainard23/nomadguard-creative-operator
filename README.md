@@ -11,7 +11,7 @@ Brand and brief: fictional NomadGuard travel protection ([`briefs/`](briefs/)).
 
 ## Final video
 
-TODO before submitting: add the final MP4 (or a Drive link) here. It is the `runs/<runId>/final.mp4` of the run you are submitting: clips made with Veo 3.1 in Google Flow, assembled and checked by this pipeline. See "Providers" for why the clips are made by hand.
+[`submission/final.mp4`](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/final.mp4) is the submitted advertisement: 14s, 1080x1920 (9:16), H.264 + AAC. Clips were made with Veo 3.1 in Google Flow, then assembled and checked by this pipeline (technical QA valid; creative QA scores in [`submission/qa.json`](submission/qa.json): realism 9, consistency 8, brief adherence 9, hook 8, ad quality 9). The raw Flow clips are in [`submission/clips/`](submission/clips/) ([s1](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/clips/s1.mp4), [s2](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/clips/s2.mp4), [s3](https://github.com/brainard23/nomadguard-creative-operator/blob/main/submission/clips/s3.mp4)). See "Providers" for why the clips are made by hand.
 
 ## Setup
 
