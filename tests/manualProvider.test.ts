@@ -24,7 +24,7 @@ beforeAll(async () => {
   await makeClip(clip("6s-silent.mp4"), { width: 270, height: 480, seconds: 6, audio: false });
   await makeClip(clip("12s-long.mp4"), { width: 270, height: 480, seconds: 12 });
   await makeClip(clip("2s-short-silent.mp4"), { width: 270, height: 480, seconds: 2, audio: false });
-});
+}, 60_000);
 afterAll(async () => {
   await rm(fixtures, { recursive: true, force: true });
 });
